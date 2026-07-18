@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#f6efe4">
+  <title>Kilaža & Trening</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Ekran učitavanja: stoji dok se podaci ne povuku sa servera, pa ga app.js
+     sakrije (ili prikaže poruku o grešci ako nema mreže). -->
+<div id="ucitavanje">
+  <div class="ucit-poruka">
+    <strong>Kilaža &amp; Trening</strong>
+    <p>Učitavanje…</p>
+  </div>
+</div>
+
+<main>
+
+  <!-- ======================= EKRAN: KILAŽA ======================= -->
+  <!-- Ceo sadržaj (zaglavlje, grafik, statistika, stepper, obroci) renderuje
+       renderKilaza u app.js jer je interaktivan (opseg, unos, čuvanje). -->
+  <section id="sekcija-kilaza">
+    <div id="kilaza-sadrzaj"></div>
+  </section>
+
+  <!-- ======================= EKRAN: TRENINZI ======================= -->
+  <section id="sekcija-treninzi" hidden>
+    <header class="ekran-zaglavlje">
+      <div>
+        <p class="nadnaslov">DNEVNIK</p>
+        <h1>Treninzi</h1>
+      </div>
+    </header>
+
+    <p class="naslov-sekcije">
+      <span class="trening-naslov">
+        <svg class="teg-ikona" viewBox="0 0 24 24"><path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        NOVI TRENING
+      </span>
+    </p>
+
+    <div class="kartica-forma istaknuta">
+      <label class="polje-datum">datum <input id="trening-datum" type="date"></label>
+      <input id="trening-naziv" type="text" placeholder="Naziv treninga — npr. Gornji deo tela" maxlength="40">
+      <div class="red-polja">
+        <label>od <input id="trening-od" type="time"></label>
+        <label>do <input id="trening-do" type="time"></label>
+      </div>
+      <textarea id="trening-linije" placeholder="Šta si radio (jedna vežba po redu)&#10;npr. Potisak s klupe — 4×8 · 60 kg" maxlength="600"></textarea>
+      <div>
+        <p class="teg-naslov">TEŽINA SESIJE <span class="teg-hint">· tapni teg</span></p>
+        <div id="trening-tezina" class="teg-birac"></div>
+      </div>
+      <textarea id="trening-beleska" placeholder="Beleška — kako si se osećao (opciono)" maxlength="300"></textarea>
+      <button id="trening-dodaj" class="glavno-dugme">Sačuvaj trening</button>
+    </div>
+
+    <p class="naslov-sekcije">POSLEDNJI TRENINZI</p>
+    <div id="trening-lista" class="lista"></div>
+  </section>
+
+  <!-- ======================= EKRAN: TRENING (detalj) ======================= -->
+  <!-- Otvara se tapom na trening u listi; renderuje ga renderTrening. -->
+  <section id="sekcija-trening" hidden>
+    <div id="trening-sadrzaj"></div>
+  </section>
+
+</main>
+
+<!-- ======================= DONJA NAVIGACIJA ======================= -->
+<nav class="donja-nav">
+  <button class="nav-dugme" data-sekcija="kilaza">
+    <svg viewBox="0 0 24 24"><path d="M4 16a8 8 0 0 1 16 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 16l3.5-4.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M3 16h18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    Kilaža
+  </button>
+  <button class="nav-dugme" data-sekcija="treninzi">
+    <svg viewBox="0 0 24 24"><path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    Trening
+  </button>
+</nav>
+
+<script src="storage.js"></script>
+<script src="app.js"></script>
+<script>
+  // Registracija service worker-a za PWA (offline rad + instalacija na telefon).
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js").catch(function () {});
+  }
+
+  // Sprečava zumiranje da se prikaz ne "mulja".
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  window.addEventListener("keydown", function (e) {
+    if ((e.ctrlKey || e.metaKey) && ["+", "-", "=", "0"].indexOf(e.key) !== -1) {
+      e.preventDefault();
+    }
+  });
+</script>
+</body>
+</html>
