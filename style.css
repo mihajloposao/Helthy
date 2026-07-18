@@ -850,7 +850,14 @@ input:focus {
 .dan-info strong {
   font-size: 14px;
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+}
+
+/* Sekundarni red (npr. "3 obroka · 1 trening") u listi POSLEDNJI DANI */
+.dan-meta {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-blago);
 }
 
 .mini-trake {

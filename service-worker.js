@@ -9,7 +9,7 @@
  * KES_NAZIV (npr. "kilaza-trening-v2") da bi korisnici dobili novu verziju.
  */
 
-var KES_NAZIV = "kilaza-trening-v1";
+var KES_NAZIV = "kilaza-trening-v2";
 
 var FAJLOVI = [
   "./",

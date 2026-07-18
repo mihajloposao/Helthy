@@ -31,23 +31,24 @@
   </section>
 
   <!-- ======================= EKRAN: TRENINZI ======================= -->
+  <!-- Samo unos novog treninga. Trening se uvek beleži za DANAŠNJI datum;
+       pregled ranijih treninga je na ekranu Istorija (po danu). -->
   <section id="sekcija-treninzi" hidden>
     <header class="ekran-zaglavlje">
       <div>
-        <p class="nadnaslov">DNEVNIK</p>
-        <h1>Treninzi</h1>
+        <p class="nadnaslov" id="trening-danas-datum"></p>
+        <h1>Novi trening</h1>
       </div>
     </header>
 
     <p class="naslov-sekcije">
       <span class="trening-naslov">
         <svg class="teg-ikona" viewBox="0 0 24 24"><path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        NOVI TRENING
+        DANAŠNJI TRENING
       </span>
     </p>
 
     <div class="kartica-forma istaknuta">
-      <label class="polje-datum">datum <input id="trening-datum" type="date"></label>
       <input id="trening-naziv" type="text" placeholder="Naziv treninga — npr. Gornji deo tela" maxlength="40">
       <div class="red-polja">
         <label>od <input id="trening-od" type="time"></label>
@@ -61,15 +62,67 @@
       <textarea id="trening-beleska" placeholder="Beleška — kako si se osećao (opciono)" maxlength="300"></textarea>
       <button id="trening-dodaj" class="glavno-dugme">Sačuvaj trening</button>
     </div>
-
-    <p class="naslov-sekcije">POSLEDNJI TRENINZI</p>
-    <div id="trening-lista" class="lista"></div>
   </section>
 
   <!-- ======================= EKRAN: TRENING (detalj) ======================= -->
-  <!-- Otvara se tapom na trening u listi; renderuje ga renderTrening. -->
+  <!-- Otvara se tapom na trening u Detalju dana; renderuje ga renderTrening. -->
   <section id="sekcija-trening" hidden>
     <div id="trening-sadrzaj"></div>
+  </section>
+
+  <!-- ======================= EKRAN: ISTORIJA ======================= -->
+  <!-- Pregled po mesecu: sažetak, kalendar obojen po unosu, lista poslednjih
+       dana. Tap na dan otvara Detalj dana. Renderuje renderIstorija. -->
+  <section id="sekcija-istorija" hidden>
+    <header class="ekran-zaglavlje">
+      <div>
+        <p class="nadnaslov">PREGLED</p>
+        <h1 id="istorija-mesec"></h1>
+      </div>
+      <div class="plan-tabovi">
+        <button id="mesec-nazad" class="tab-dugme" title="Prethodni mesec">‹</button>
+        <button id="mesec-napred" class="tab-dugme" title="Sledeći mesec">›</button>
+      </div>
+    </header>
+
+    <div class="kartice-red">
+      <div class="kartica tamna">
+        <strong id="istorija-treninzi">0</strong>
+        <small>treninga u mesecu</small>
+      </div>
+      <div class="kartica">
+        <strong id="istorija-kcal">—</strong>
+        <small>prosek kcal / dan</small>
+      </div>
+    </div>
+
+    <div id="istorija-kalendar" class="kalendar"></div>
+    <div class="legenda">
+      <span><i class="kocka" style="background:#44659e"></i> trening</span>
+      <span><i class="kocka pola"></i> samo obroci</span>
+      <span><i class="kocka prazan"></i> bez unosa</span>
+    </div>
+
+    <p class="naslov-sekcije">POSLEDNJI DANI</p>
+    <div id="istorija-dani" class="lista"></div>
+  </section>
+
+  <!-- ======================= EKRAN: DETALJ DANA ======================= -->
+  <!-- Sav sadržaj (obroci sa zbirom + treninzi tog dana) renderuje
+       renderDetalj u #detalj-sadrzaj. -->
+  <section id="sekcija-detalj" hidden>
+    <header class="ekran-zaglavlje">
+      <div>
+        <button id="detalj-nazad" class="nazad-dugme">‹ Istorija</button>
+        <p class="nadnaslov" id="detalj-dan"></p>
+        <h1 id="detalj-datum"></h1>
+      </div>
+      <div class="zbir">
+        <strong id="detalj-ukupno">0</strong>
+        <small>kcal ukupno</small>
+      </div>
+    </header>
+    <div id="detalj-sadrzaj"></div>
   </section>
 
 </main>
@@ -83,6 +136,10 @@
   <button class="nav-dugme" data-sekcija="treninzi">
     <svg viewBox="0 0 24 24"><path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     Trening
+  </button>
+  <button class="nav-dugme" data-sekcija="istorija">
+    <svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 10h16M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    Istorija
   </button>
 </nav>
 

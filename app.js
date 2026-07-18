@@ -22,13 +22,16 @@ var MESECI = ["januar", "februar", "mart", "april", "maj", "jun", "jul", "avgust
 /* ===================== STANJE UI ===================== */
 
 var stanje = {
-  sekcija: "kilaza",          // kilaza | treninzi | trening (detalj)
+  sekcija: "kilaza",          // kilaza | treninzi | trening | istorija | detalj
   kilazaOpseg: "30d",         // opseg grafika kilaže: 7d | 30d | sve
   kilazaDraft: null,          // vrednost u steperu (kg) pre čuvanja; null = tek otvoreno
   kilazaSacuvano: false,      // prolazno: "Sačuvano ✓" posle upisa
   treningTezina: 3,           // izabrana težina (1–5) u formi za novi trening
   treningDatum: null,         // datum treninga otvorenog na Trening (detalj) ekranu
   treningId: null,            // id treninga otvorenog na Trening (detalj) ekranu
+  treningNazad: "detalj",     // kuda vodi "nazad" sa Trening detalja (detalj | treninzi)
+  mesecOffset: 0,             // pomeraj meseca na Istoriji (0 = tekući, -1 = prošli…)
+  detaljDatum: null,          // datum otvoren na ekranu Detalj dana
   obrokDraft: { opis: "", kcal: "", protein: "", ugljeni: "", masti: "" }
 };
 
@@ -108,8 +111,10 @@ function prikaziSekciju(naziv) {
     stanje.kilazaSacuvano = false;
   }
 
-  // Bottom nav: "trening" (detalj) ostaje pod tabom "treninzi".
-  var navTab = naziv === "trening" ? "treninzi" : naziv;
+  // Bottom nav: pod-ekrani ostaju pod svojim tabom.
+  var navTab = naziv;
+  if (naziv === "trening") navTab = "treninzi";
+  if (naziv === "detalj") navTab = "istorija";
   var dugmad = document.querySelectorAll(".nav-dugme");
   for (var j = 0; j < dugmad.length; j++) {
     dugmad[j].classList.toggle("aktivan", dugmad[j].dataset.sekcija === navTab);
@@ -123,6 +128,8 @@ function osveziAktivnuSekciju() {
   if (stanje.sekcija === "kilaza") renderKilaza();
   if (stanje.sekcija === "treninzi") renderTreninzi();
   if (stanje.sekcija === "trening") renderTrening();
+  if (stanje.sekcija === "istorija") renderIstorija();
+  if (stanje.sekcija === "detalj") renderDetalj();
 }
 
 // Kači "click" handler na sve elemente koji odgovaraju selektoru unutar
@@ -197,50 +204,12 @@ function tegoviHtml(tezina, klasa) {
   return '<span class="' + klasa + '">' + s + "</span>";
 }
 
-// Ekran "Treninzi": podrazumevani datum u formi, teg-birač i lista poslednjih
-// unetih treninga (skenira ~120 dana unazad, najnoviji prvo). Tap otvara detalj.
+// Ekran "Treninzi": samo unos novog treninga za DANAS (naslov sa datumom +
+// teg-birač). Pregled ranijih treninga je na Istoriji, po danu.
 function renderTreninzi() {
-  var polje = document.getElementById("trening-datum");
-  if (polje && !polje.value) polje.value = danasKey();
+  var oznaka = document.getElementById("trening-danas-datum");
+  if (oznaka) oznaka.textContent = imeDatuma(danasKey()).toUpperCase();
   crtajTegBirac();
-
-  var kontejner = document.getElementById("trening-lista");
-  var redovi = [];
-  var kljuc = danasKey();
-  for (var i = 0; i < 120; i++) {
-    var treninzi = ucitajDan(kljuc).treninzi || [];
-    for (var j = 0; j < treninzi.length; j++) {
-      redovi.push({ datum: kljuc, t: treninzi[j] });
-    }
-    kljuc = pomeriDatum(kljuc, -1);
-  }
-
-  if (!redovi.length) {
-    kontejner.innerHTML = '<p class="prazno">Još nema unetih treninga. Dodaj prvi iznad.</p>';
-    return;
-  }
-
-  var html = "";
-  for (var k = 0; k < redovi.length; k++) {
-    var d = datumIzKljuca(redovi[k].datum);
-    var t = redovi[k].t;
-    html +=
-      '<button type="button" class="trening-red" data-datum="' + redovi[k].datum + '" data-id="' + t.id + '">' +
-        '<span class="trening-tacka"></span>' +
-        '<span class="trening-red-info">' +
-          '<span class="trening-red-naziv">' + escapeHtml(t.naziv) + "</span>" +
-          '<span class="trening-red-vreme">' + DANI_KRATKO[d.getDay()] + " " + d.getDate() + ". " + MESECI[d.getMonth()] +
-            " · " + t.od + "–" + t.do + " · " + formatTrajanje(treningMinuta(t)) + "</span>" +
-        "</span>" +
-        tegoviHtml(t.tezina, "teg-mini") +
-        '<span class="trening-strelica">›</span>' +
-      "</button>";
-  }
-  kontejner.innerHTML = html;
-
-  poveziKlik(kontejner, ".trening-red", function () {
-    otvoriTrening(this.dataset.datum, this.dataset.id);
-  });
 }
 
 // (Pre)crta 5 tegova u formi + reč težine. Poziva se pri renderu i pri tapu
@@ -262,10 +231,12 @@ function crtajTegBirac() {
   });
 }
 
-// Otvara detaljni ekran jednog treninga.
-function otvoriTrening(datum, id) {
+// Otvara detaljni ekran jednog treninga. "izvor" je ekran na koji vodi dugme
+// nazad (podrazumevano Detalj dana, odakle se treninzi i otvaraju).
+function otvoriTrening(datum, id, izvor) {
   stanje.treningDatum = datum;
   stanje.treningId = id;
+  stanje.treningNazad = izvor || "detalj";
   prikaziSekciju("trening");
 }
 
@@ -274,10 +245,11 @@ function renderTrening() {
   var kontejner = document.getElementById("trening-sadrzaj");
   var t = nadjiTrening(stanje.treningDatum, stanje.treningId);
   if (t === null) { // obrisan u međuvremenu
-    prikaziSekciju("treninzi");
+    prikaziSekciju(stanje.treningNazad);
     return;
   }
   var d = datumIzKljuca(stanje.treningDatum);
+  var nazadOznaka = stanje.treningNazad === "detalj" ? "‹ Dan" : "‹ Treninzi";
 
   // Linije "šta sam radio": svaka se deli na "—" (levo naziv, desno detalj).
   var linijeHtml = "";
@@ -298,7 +270,7 @@ function renderTrening() {
   var html =
     '<header class="ekran-zaglavlje">' +
       "<div>" +
-        '<button class="nazad-dugme" id="trening-nazad">‹ Treninzi</button>' +
+        '<button class="nazad-dugme" id="trening-nazad">' + nazadOznaka + "</button>" +
         '<p class="nadnaslov">TRENING · ' + DANI[d.getDay()].toUpperCase() + "</p>" +
         "<h1>" + escapeHtml(t.naziv) + "</h1>" +
       "</div>" +
@@ -334,12 +306,12 @@ function renderTrening() {
 
   kontejner.innerHTML = html;
   document.getElementById("trening-nazad").addEventListener("click", function () {
-    prikaziSekciju("treninzi");
+    prikaziSekciju(stanje.treningNazad);
   });
   document.getElementById("trening-obrisi").addEventListener("click", function () {
     if (confirm('Obrisati trening "' + t.naziv + '"?')) {
       obrisiTrening(stanje.treningDatum, stanje.treningId);
-      prikaziSekciju("treninzi");
+      prikaziSekciju(stanje.treningNazad);
     }
   });
 }
@@ -836,9 +808,9 @@ function nadjiTrening(datum, id) {
   return null;
 }
 
-// Dodavanje treninga iz forme na Trening ekranu (datum se bira u formi).
+// Dodavanje treninga iz forme. Trening se uvek beleži za DANAŠNJI datum.
 function dodajTreningKlik() {
-  var datum = document.getElementById("trening-datum").value || danasKey();
+  var datum = danasKey();
   var naziv = document.getElementById("trening-naziv").value.trim();
   var od = document.getElementById("trening-od").value;
   var doVreme = document.getElementById("trening-do").value;
@@ -866,6 +838,231 @@ function dodajTreningKlik() {
   document.getElementById("trening-beleska").value = "";
   stanje.treningTezina = 3;
   renderTreninzi();
+
+  // Kratka potvrda na dugmetu (nema više liste ispod da to pokaže).
+  var dugme = document.getElementById("trening-dodaj");
+  if (dugme) {
+    dugme.textContent = "Sačuvano ✓ — vidi u Istoriji";
+    dugme.style.background = "#3d8f6f";
+    clearTimeout(treningPotvrdaTajmer);
+    treningPotvrdaTajmer = setTimeout(function () {
+      dugme.textContent = "Sačuvaj trening";
+      dugme.style.removeProperty("background");
+    }, 1800);
+  }
+}
+
+var treningPotvrdaTajmer = null;
+
+/* ===================== ISTORIJA: POMOĆNE ===================== */
+
+// Ima li dan bar jedan trening?
+function danImaTrening(datum) {
+  return (ucitajDan(datum).treninzi || []).length > 0;
+}
+
+// Ima li dan bilo kakav unos (trening ili obrok)? Određuje da li se dan
+// oboji na kalendaru i da li se može otvoriti Detalj.
+function danImaPodatke(datum) {
+  return danImaTrening(datum) || danImaObroke(datum);
+}
+
+// Ukupan broj treninga u datom mesecu.
+function treninziUMesecu(godina, mesec) {
+  var broj = 0;
+  var brojDana = new Date(godina, mesec + 1, 0).getDate();
+  for (var dan = 1; dan <= brojDana; dan++) {
+    var kljuc = dateKey(new Date(godina, mesec, dan));
+    broj += (ucitajDan(kljuc).treninzi || []).length;
+  }
+  return broj;
+}
+
+// Prosečan dnevni unos kalorija u mesecu (samo dani sa obrocima). null ako nema.
+function prosekKcalMeseca(godina, mesec) {
+  var brojDana = new Date(godina, mesec + 1, 0).getDate();
+  var zbir = 0, dana = 0;
+  for (var dan = 1; dan <= brojDana; dan++) {
+    var kljuc = dateKey(new Date(godina, mesec, dan));
+    if (danImaObroke(kljuc)) {
+      zbir += zbirObroka(kljuc).kcal;
+      dana++;
+    }
+  }
+  return dana === 0 ? null : Math.round(zbir / dana);
+}
+
+/* ===================== RENDER: ISTORIJA ===================== */
+
+// Pregled meseca: sažetak (treninzi + prosek kcal), kalendar obojen po unosu
+// i lista poslednjih dana. Tap na dan otvara Detalj dana.
+function renderIstorija() {
+  var danas = new Date();
+  var prikaz = new Date(danas.getFullYear(), danas.getMonth() + stanje.mesecOffset, 1);
+  var godina = prikaz.getFullYear();
+  var mesec = prikaz.getMonth();
+
+  document.getElementById("istorija-mesec").textContent =
+    MESECI[mesec].charAt(0).toUpperCase() + MESECI[mesec].slice(1) +
+    (godina !== danas.getFullYear() ? " " + godina : "");
+
+  document.getElementById("istorija-treninzi").textContent = treninziUMesecu(godina, mesec);
+  var pros = prosekKcalMeseca(godina, mesec);
+  document.getElementById("istorija-kcal").textContent = pros === null ? "—" : formatKcal(pros);
+
+  // Nema budućih meseci (nema podataka unapred).
+  var napred = document.getElementById("mesec-napred");
+  if (napred) napred.disabled = stanje.mesecOffset >= 0;
+
+  renderKalendar(godina, mesec);
+  renderPoslednjeDane();
+}
+
+// Mini kalendar meseca (Pon–Ned). Boja dana: pun = trening, polovina = samo
+// obroci, isprekidan = bez unosa. Tap na dan sa unosom otvara Detalj.
+function renderKalendar(godina, mesec) {
+  var kontejner = document.getElementById("istorija-kalendar");
+  var danasKljuc = danasKey();
+  var brojDana = new Date(godina, mesec + 1, 0).getDate();
+
+  // getDay() vraća 0 za nedelju; nama treba ponedeljak = kolona 0.
+  var prviDan = new Date(godina, mesec, 1).getDay();
+  var pomak = (prviDan + 6) % 7;
+
+  var html = "";
+  var slova = ["P", "U", "S", "Č", "P", "S", "N"];
+  for (var z = 0; z < 7; z++) html += '<span class="kal-zaglavlje">' + slova[z] + "</span>";
+  for (var p = 0; p < pomak; p++) html += "<span></span>";
+  for (var dan = 1; dan <= brojDana; dan++) {
+    var kljuc = dateKey(new Date(godina, mesec, dan));
+    var klasa;
+    if (kljuc > danasKljuc) klasa = "bez-plana";      // budućnost
+    else if (danImaTrening(kljuc)) klasa = "ispunjen";
+    else if (danImaObroke(kljuc)) klasa = "delimican";
+    else klasa = "bez-plana";
+    var klase = "kal-dan " + klasa + (kljuc === danasKljuc ? " danas" : "");
+    html += '<button class="' + klase + '" data-datum="' + kljuc + '">' + dan + "</button>";
+  }
+  kontejner.innerHTML = html;
+
+  poveziKlik(kontejner, ".kal-dan", function () {
+    if (danImaPodatke(this.dataset.datum)) otvoriDetalj(this.dataset.datum);
+  });
+}
+
+// Lista poslednjih dana sa unosom (do 60 dana unazad, najnoviji prvo).
+function renderPoslednjeDane() {
+  var kontejner = document.getElementById("istorija-dani");
+  var html = "";
+  var kljuc = danasKey();
+
+  for (var i = 0; i < 60; i++) {
+    if (danImaPodatke(kljuc)) {
+      var dan = ucitajDan(kljuc);
+      var d = datumIzKljuca(kljuc);
+      var zbir = zbirObroka(kljuc);
+      var brTren = (dan.treninzi || []).length;
+
+      var meta = [];
+      if (zbir.broj) meta.push(zbir.broj + " " + recObroka(zbir.broj));
+      if (brTren) meta.push(brTren + " " + (brTren === 1 ? "trening" : "treninga"));
+
+      html +=
+        '<button class="dan-red" data-datum="' + kljuc + '">' +
+          '<span class="dan-broj">' + String(d.getDate()).padStart(2, "0") +
+            "<small>" + DANI_KRATKO[d.getDay()] + "</small></span>" +
+          '<span class="dan-info">' +
+            "<strong>" + (zbir.broj ? formatKcal(zbir.kcal) + " kcal" : "bez obroka") + "</strong>" +
+            '<span class="dan-meta">' + (meta.length ? meta.join(" · ") : "—") + "</span>" +
+          "</span>" +
+          (brTren ? '<span class="dan-vreme">' + treningIkonaSvg() + "</span>" : "") +
+        "</button>";
+    }
+    kljuc = pomeriDatum(kljuc, -1);
+  }
+
+  kontejner.innerHTML = html === "" ? '<p class="prazno">Još nema unetih dana.</p>' : html;
+
+  poveziKlik(kontejner, ".dan-red", function () {
+    otvoriDetalj(this.dataset.datum);
+  });
+}
+
+/* ===================== RENDER: DETALJ DANA ===================== */
+
+// Otvara ekran sa detaljima jednog dana iz istorije.
+function otvoriDetalj(datum) {
+  stanje.detaljDatum = datum;
+  prikaziSekciju("detalj");
+}
+
+// Jedan obrok u pregledu (bez dugmeta za brisanje — istorija je samo prikaz).
+function obrokRedPregledHtml(o) {
+  return '<div class="obrok-red">' +
+    '<span class="obrok-info">' +
+      '<span class="obrok-opis">' + escapeHtml(o.opis) + "</span>" +
+      obrokMakroiHtml(o) +
+    "</span>" +
+  "</div>";
+}
+
+// Jedan trening u listi dana (tap otvara puni detalj treninga).
+function treningRedHtml(datum, t) {
+  return '<button type="button" class="trening-red" data-datum="' + datum + '" data-id="' + t.id + '">' +
+    '<span class="trening-tacka"></span>' +
+    '<span class="trening-red-info">' +
+      '<span class="trening-red-naziv">' + escapeHtml(t.naziv) + "</span>" +
+      '<span class="trening-red-vreme">' + t.od + "–" + t.do + " · " + formatTrajanje(treningMinuta(t)) + "</span>" +
+    "</span>" +
+    tegoviHtml(t.tezina, "teg-mini") +
+    '<span class="trening-strelica">›</span>' +
+  "</button>";
+}
+
+// Detalj dana: obroci tog dana (sa zbirom kalorija i makroa) + odrađeni treninzi.
+function renderDetalj() {
+  var datum = stanje.detaljDatum;
+  var d = datumIzKljuca(datum);
+  var dan = ucitajDan(datum);
+  var obroci = dan.obroci || [];
+  var treninzi = dan.treninzi || [];
+  var zbir = zbirObroka(datum);
+
+  document.getElementById("detalj-dan").textContent = DANI[d.getDay()].toUpperCase();
+  document.getElementById("detalj-datum").textContent = d.getDate() + ". " + MESECI[d.getMonth()];
+  document.getElementById("detalj-ukupno").textContent = formatKcal(zbir.kcal);
+
+  var html = "";
+
+  // ---- Obroci ----
+  html += '<p class="naslov-sekcije"><span class="obrok-naslov">' + obrokIkonaSvg() +
+    " OBROCI</span><span class=\"desno\">" + zbir.broj + " " + recObroka(zbir.broj) + "</span></p>";
+  if (obroci.length) {
+    html += zbirObrokaHtml(zbir, "kcal ukupno");
+    html += '<div class="lista obroci-lista">';
+    for (var i = 0; i < obroci.length; i++) html += obrokRedPregledHtml(obroci[i]);
+    html += "</div>";
+  } else {
+    html += '<p class="prazno">Nema unetih obroka za ovaj dan.</p>';
+  }
+
+  // ---- Treninzi ----
+  html += '<p class="naslov-sekcije"><span class="trening-naslov">' + treningIkonaSvg() +
+    " TRENINZI</span><span class=\"desno\">" + treninzi.length + "</span></p>";
+  if (treninzi.length) {
+    html += '<div class="lista">';
+    for (var j = 0; j < treninzi.length; j++) html += treningRedHtml(datum, treninzi[j]);
+    html += "</div>";
+  } else {
+    html += '<p class="prazno">Nema treninga za ovaj dan.</p>';
+  }
+
+  var kontejner = document.getElementById("detalj-sadrzaj");
+  kontejner.innerHTML = html;
+
+  poveziKlik(kontejner, ".trening-red", function () {
+    otvoriTrening(this.dataset.datum, this.dataset.id, "detalj");
+  });
 }
 
 /* ===================== INIT ===================== */
@@ -882,6 +1079,21 @@ function init() {
 
   // Trening: dodavanje iz forme.
   document.getElementById("trening-dodaj").addEventListener("click", dodajTreningKlik);
+
+  // Istorija: prebacivanje meseca (bez budućih meseci).
+  document.getElementById("mesec-nazad").addEventListener("click", function () {
+    stanje.mesecOffset--;
+    renderIstorija();
+  });
+  document.getElementById("mesec-napred").addEventListener("click", function () {
+    if (stanje.mesecOffset < 0) stanje.mesecOffset++;
+    renderIstorija();
+  });
+
+  // Detalj dana: povratak na Istoriju.
+  document.getElementById("detalj-nazad").addEventListener("click", function () {
+    prikaziSekciju("istorija");
+  });
 
   prikaziSekciju("kilaza");
 }
