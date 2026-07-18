@@ -34,15 +34,15 @@ build alata.
 `storage.js` je isti kao u Fokusu i koristi **isti Supabase projekat i iste
 ključeve**:
 
-- `fokus-kilaza` — kilaža (unosi + cilj). Samo ova aplikacija je diraju.
-- `fokus-data` — dnevni objekti; treninzi i obroci žive unutar dana
+- `kilaza-trening` — kilaža (unosi + cilj). Samo ova aplikacija je diraju.
+- `fokus-planovi` — dnevni objekti; treninzi i obroci žive unutar dana
   (`dan.treninzi`, `dan.obroci`), pored planova koje piše Fokus.
 
 Zato se svi tvoji **postojeći** treninzi/obroci/kilaža automatski vide ovde,
 bez migracije.
 
 > **Napomena o istovremenom radu:** i Fokus i ova aplikacija pišu ključ
-> `fokus-data` (svaka svoj deo dana). Svaka aplikacija čita ceo dan, menja svoj
+> `fokus-planovi` (svaka svoj deo dana). Svaka aplikacija čita ceo dan, menja svoj
 > deo i upisuje ceo dan nazad, pa čuva tuđe podatke. Pošto je sinhronizacija
 > "poslednji upis pobeđuje", teoretski je moguć konflikt samo ako istovremeno
 > menjaš isti dan u obe aplikacije pre nego što se prva sinhronizuje. Za

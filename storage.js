@@ -13,7 +13,7 @@
  * Struktura podataka (isti oblici kao ranije, sad kao redovi u tabeli
  * fokus_store: key = ime ključa, value = JSON):
  *
- * Ključ "fokus-data" — objekat po danima, ključ je datum "YYYY-MM-DD":
+ * Ključ "fokus-planovi" — objekat po danima, ključ je datum "YYYY-MM-DD":
  *   {
  *     "2026-07-04": {
  *       fixedEvents: [ { naziv, od: "09:00", do: "10:30" } ],
@@ -32,7 +32,7 @@
  * Ključ "fokus-active-timer" — trenutno aktivan tajmer ili null:
  *   { itemId, datum, start: timestamp_ms | null, pausedElapsed: ms }
  *
- * Ključ "fokus-kilaza" — { unosi: { "YYYY-MM-DD": kg }, cilj: number | null,
+ * Ključ "kilaza-trening" — { unosi: { "YYYY-MM-DD": kg }, cilj: number | null,
  *   ciljBaza: number | null }  (ciljBaza = težina u trenutku postavljanja cilja,
  *   da se zna smer: mršavljenje ako je cilj ispod baze, gojenje ako je iznad)
  */
@@ -48,9 +48,9 @@ var SUPABASE_TABELA = SUPABASE_URL + "/rest/v1/fokus_store";
 
 /* ===================== MEMORIJSKI KEŠ + SINHRONIZACIJA ===================== */
 
-var KLJUC_PODACI = "fokus-data";
+var KLJUC_PODACI = "fokus-planovi";
 var KLJUC_TAJMER = "fokus-active-timer";
-var KLJUC_KILAZA = "fokus-kilaza";
+var KLJUC_KILAZA = "kilaza-trening";
 
 // Keš drži vrednosti kao JSON stringove — tačno kao što je localStorage radio,
 // pa se ostatak fajla ponaša identično (parse pri čitanju, stringify pri upisu).
