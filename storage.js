@@ -31,6 +31,8 @@
  *
  * Ključ "fokus-active-timer" — trenutno aktivan tajmer ili null:
  *   { itemId, datum, start: timestamp_ms | null, pausedElapsed: ms }
+ *   (ova aplikacija ga ne koristi, ali ga Fokus koristi — zato se ključ i dalje
+ *    migrira i ne dira)
  *
  * Ključ "kilaza-trening" — { unosi: { "YYYY-MM-DD": kg }, cilj: number | null,
  *   ciljBaza: number | null }  (ciljBaza = težina u trenutku postavljanja cilja,
@@ -42,44 +44,48 @@
 // URL projekta i PUBLISHABLE (javni) ključ — namenjeni da budu vidljivi u
 // browseru. NE koristi secret ključ ovde. Pristup je ograničen RLS pravilom
 // na tabelu fokus_store (vidi SQL uz projekat).
-var SUPABASE_URL = "https://pvlirqcojbpbvnlsqlmz.supabase.co";
-var SUPABASE_KEY = "sb_publishable_4MK0o9GHOkoKbNK7F7223Q_rsdSndSm";
-var SUPABASE_TABELA = SUPABASE_URL + "/rest/v1/fokus_store";
+const SUPABASE_URL = "https://pvlirqcojbpbvnlsqlmz.supabase.co";
+const SUPABASE_KEY = "sb_publishable_4MK0o9GHOkoKbNK7F7223Q_rsdSndSm";
+const SUPABASE_TABELA = SUPABASE_URL + "/rest/v1/fokus_store";
 
 /* ===================== MEMORIJSKI KEŠ + SINHRONIZACIJA ===================== */
 
-var KLJUC_PODACI = "fokus-planovi";
-var KLJUC_TAJMER = "fokus-active-timer";
-var KLJUC_KILAZA = "kilaza-trening";
+const KLJUC_PODACI = "fokus-planovi";
+const KLJUC_TAJMER = "fokus-active-timer";
+const KLJUC_KILAZA = "kilaza-trening";
 
 // Keš drži vrednosti kao JSON stringove — tačno kao što je localStorage radio,
 // pa se ostatak fajla ponaša identično (parse pri čitanju, stringify pri upisu).
-var kes = {};
+let kes = {};
 
-var prljavi = {};   // key -> "upsert" | "delete" (ima nesnimljenih izmena)
-var cekaju = {};    // key -> id setTimeout-a (debounce po ključu)
+// Drugi nivo keša: već isparsirani objekti po ključu. JSON.parse celog store-a
+// je skup, a renderi (Istorija, poslednji dani) čitaju podatke stotinama puta
+// po prolazu. Upis kroz setStavka/delStavka poništava ovaj keš za taj ključ.
+let parsirano = {};
+
+const prljavi = {};   // key -> "upsert" | "delete" (ima nesnimljenih izmena)
+const cekaju = {};    // key -> id setTimeout-a (debounce po ključu)
 
 function supaZaglavlja(dodatna) {
-  var z = { "apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY };
-  if (dodatna) {
-    for (var k in dodatna) z[k] = dodatna[k];
-  }
-  return z;
+  return Object.assign(
+    { "apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY },
+    dodatna
+  );
 }
 
 // Šalje najnoviju izmenu ključa na server (upsert ili delete). keepalive se
 // koristi pri zatvaranju stranice da zahtev preživi.
 function posalji(key, keepalive) {
-  var tip = prljavi[key];
+  const tip = prljavi[key];
   if (!tip) return Promise.resolve();
 
-  var url, opcije;
+  let url, opcije;
   if (tip === "delete") {
-    url = SUPABASE_TABELA + "?key=eq." + encodeURIComponent(key);
+    url = `${SUPABASE_TABELA}?key=eq.${encodeURIComponent(key)}`;
     opcije = { method: "DELETE", headers: supaZaglavlja(), keepalive: !!keepalive };
   } else {
     url = SUPABASE_TABELA;
-    var value = kes.hasOwnProperty(key) ? JSON.parse(kes[key]) : null;
+    const value = Object.prototype.hasOwnProperty.call(kes, key) ? JSON.parse(kes[key]) : null;
     opcije = {
       method: "POST",
       headers: supaZaglavlja({ "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates" }),
@@ -88,12 +94,12 @@ function posalji(key, keepalive) {
     };
   }
 
-  return fetch(url, opcije).then(function (r) {
+  return fetch(url, opcije).then((r) => {
     if (!r.ok) throw new Error("Supabase " + r.status);
     if (prljavi[key] === tip) delete prljavi[key]; // ako se u međuvremenu nije promenilo
-  }).catch(function (e) {
+  }).catch((e) => {
     // Ostavi "prljavi" oznaku da se pokuša ponovo pri sledećem upisu/zatvaranju.
-    console.warn("Neuspeo upis na server (" + key + "):", e.message);
+    console.warn(`Neuspeo upis na server (${key}):`, e.message);
   });
 }
 
@@ -101,24 +107,28 @@ function posalji(key, keepalive) {
 function zakazi(key, tip) {
   prljavi[key] = tip;
   clearTimeout(cekaju[key]);
-  cekaju[key] = setTimeout(function () { posalji(key); }, 600);
+  cekaju[key] = setTimeout(() => posalji(key), 600);
 }
 
 // Čita string vrednost ključa iz keša (mirror localStorage.getItem).
 function getStavka(key) {
-  return kes.hasOwnProperty(key) ? kes[key] : null;
+  return Object.prototype.hasOwnProperty.call(kes, key) ? kes[key] : null;
 }
 
 // Upisuje string vrednost: keš + lokalni backup + zakazan upis na server.
 function setStavka(key, str) {
   kes[key] = str;
+  delete parsirano[key];   // isparsirana kopija više nije verodostojna
   try { localStorage.setItem(key, str); } catch (e) {}
   zakazi(key, "upsert");
 }
 
-// Briše ključ: keš + lokalni backup + zakazano brisanje na serveru.
+// Briše ključ: keš + lokalni backup + zakazano brisanje na serveru. Ova
+// aplikacija trenutno ne briše nijedan ključ (parnjak setStavka za "delete"
+// granu sinhronizacije).
 function delStavka(key) {
   delete kes[key];
+  delete parsirano[key];
   try { localStorage.removeItem(key); } catch (e) {}
   zakazi(key, "delete");
 }
@@ -126,25 +136,27 @@ function delStavka(key) {
 // Učitava sve redove sa servera u keš. Poziva se jednom pri pokretanju.
 function ucitajSaServera() {
   return fetch(SUPABASE_TABELA + "?select=key,value", { headers: supaZaglavlja() })
-    .then(function (r) {
+    .then((r) => {
       if (!r.ok) throw new Error("Supabase " + r.status);
       return r.json();
     })
-    .then(function (redovi) {
+    .then((redovi) => {
       kes = {};
-      redovi.forEach(function (red) { kes[red.key] = JSON.stringify(red.value); });
+      parsirano = {};
+      redovi.forEach((red) => { kes[red.key] = JSON.stringify(red.value); });
     });
 }
 
 // Prvi put: ako server nema neki ključ a postoji lokalno (stara localStorage
 // verzija), prebaci ga na server da se ništa ne izgubi.
 function migracijaIzLokala() {
-  var poslovi = [];
-  [KLJUC_PODACI, KLJUC_TAJMER, KLJUC_KILAZA].forEach(function (key) {
-    if (!kes.hasOwnProperty(key)) {
-      var lok = localStorage.getItem(key);
+  const poslovi = [];
+  [KLJUC_PODACI, KLJUC_TAJMER, KLJUC_KILAZA].forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(kes, key)) {
+      const lok = localStorage.getItem(key);
       if (lok !== null) {
         kes[key] = lok;
+        delete parsirano[key];
         prljavi[key] = "upsert";
         poslovi.push(posalji(key));
       }
@@ -160,71 +172,62 @@ function ucitajSveIzBaze() {
 
 // Pri zatvaranju/skrivanju stranice pošalji sve nesnimljene izmene odmah.
 function flushSve() {
-  Object.keys(prljavi).forEach(function (k) { posalji(k, true); });
+  Object.keys(prljavi).forEach((k) => posalji(k, true));
 }
 window.addEventListener("pagehide", flushSve);
-document.addEventListener("visibilitychange", function () {
+document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") flushSve();
 });
 
 /* ===================== DNEVNI PODACI ===================== */
 
-// Učitava ceo objekat sa svim danima. Ako ništa nije sačuvano, vraća prazan objekat.
+// Učitava ceo objekat sa svim danima. Ako ništa nije sačuvano, vraća prazan
+// objekat. Parsira se najviše jednom po izmeni — dalja čitanja vraćaju isti
+// objekat iz keša.
 function ucitajSvePodatke() {
-  var sirovo = getStavka(KLJUC_PODACI);
-  if (sirovo === null) {
-    return {};
+  let podaci = parsirano[KLJUC_PODACI];
+  if (podaci === undefined) {
+    const sirovo = getStavka(KLJUC_PODACI);
+    podaci = sirovo === null ? {} : JSON.parse(sirovo);
+    parsirano[KLJUC_PODACI] = podaci;
   }
-  return JSON.parse(sirovo);
+  return podaci;
 }
 
 // Snima ceo objekat sa svim danima.
 function sacuvajSvePodatke(podaci) {
   setStavka(KLJUC_PODACI, JSON.stringify(podaci));
+  parsirano[KLJUC_PODACI] = podaci;  // upravo snimljen objekat je i dalje tačan
 }
 
 // Vraća podatke za jedan dan. Ako dan ne postoji, vraća prazan dan
 // (ne upisuje ga — upis se dešava tek kad se nešto stvarno doda).
 function ucitajDan(datum) {
-  var podaci = ucitajSvePodatke();
-  if (podaci[datum]) {
-    return podaci[datum];
-  }
-  return { fixedEvents: [], items: [], sessions: [], obaveze: [] };
+  return ucitajSvePodatke()[datum] || { fixedEvents: [], items: [], sessions: [], obaveze: [] };
 }
 
 // Snima podatke za jedan dan.
 function sacuvajDan(datum, dan) {
-  var podaci = ucitajSvePodatke();
+  const podaci = ucitajSvePodatke();
   podaci[datum] = dan;
   sacuvajSvePodatke(podaci);
-}
-
-// Da li za dati datum postoji sačuvan plan (bar jedna stavka ili obaveza)?
-function danImaPlan(datum) {
-  var podaci = ucitajSvePodatke();
-  var dan = podaci[datum];
-  if (!dan) return false;
-  return dan.items.length > 0 || (dan.obaveze && dan.obaveze.length > 0);
 }
 
 /* ===================== OBROCI ===================== */
 
 // Obroci upisani za dati dan (prazan niz ako ih nema).
 function ucitajObroke(datum) {
-  var dan = ucitajDan(datum);
-  return dan.obroci || [];
+  return ucitajDan(datum).obroci || [];
 }
 
-// Da li dan ima bar jedan upisan obrok? Namerno odvojeno od danImaPlan —
-// obroci ne treba da utiču na streak/ocenu ispunjenja plana.
+// Da li dan ima bar jedan upisan obrok?
 function danImaObroke(datum) {
   return ucitajObroke(datum).length > 0;
 }
 
 // Dodaje obrok u dati dan.
 function dodajObrok(datum, obrok) {
-  var dan = ucitajDan(datum);
+  const dan = ucitajDan(datum);
   if (!dan.obroci) dan.obroci = [];
   dan.obroci.push(obrok);
   sacuvajDan(datum, dan);
@@ -232,49 +235,35 @@ function dodajObrok(datum, obrok) {
 
 // Briše obrok iz datog dana po id-u.
 function obrisiObrok(datum, id) {
-  var dan = ucitajDan(datum);
+  const dan = ucitajDan(datum);
   if (!dan.obroci) return;
-  dan.obroci = dan.obroci.filter(function (o) { return o.id !== id; });
+  dan.obroci = dan.obroci.filter((o) => o.id !== id);
   sacuvajDan(datum, dan);
-}
-
-/* ===================== AKTIVNI TAJMER ===================== */
-
-// Vraća aktivni tajmer ili null ako nijedan tajmer ne radi.
-function ucitajAktivniTajmer() {
-  var sirovo = getStavka(KLJUC_TAJMER);
-  if (sirovo === null) {
-    return null;
-  }
-  return JSON.parse(sirovo);
-}
-
-// Snima aktivni tajmer.
-function sacuvajAktivniTajmer(tajmer) {
-  setStavka(KLJUC_TAJMER, JSON.stringify(tajmer));
-}
-
-// Briše aktivni tajmer (poziva se kad se tajmer zaustavi).
-function obrisiAktivniTajmer() {
-  delStavka(KLJUC_TAJMER);
 }
 
 /* ===================== KILAŽA ===================== */
 
 // Učitava ceo objekat kilaže; ako ništa nije sačuvano, vraća prazan.
+// Kao i dnevni podaci, parsira se jednom pa se drži u kešu.
 function ucitajKilazu() {
-  var sirovo = getStavka(KLJUC_KILAZA);
-  if (sirovo === null) {
-    return { unosi: {}, cilj: null };
+  let k = parsirano[KLJUC_KILAZA];
+  if (k === undefined) {
+    const sirovo = getStavka(KLJUC_KILAZA);
+    if (sirovo === null) {
+      k = { unosi: {}, cilj: null };
+    } else {
+      k = JSON.parse(sirovo);
+      if (!k.unosi) k.unosi = {};
+      if (k.cilj === undefined) k.cilj = null;
+      if (k.ciljBaza === undefined) k.ciljBaza = null; // težina kad je cilj postavljen (za smer)
+    }
+    parsirano[KLJUC_KILAZA] = k;
   }
-  var o = JSON.parse(sirovo);
-  if (!o.unosi) o.unosi = {};
-  if (o.cilj === undefined) o.cilj = null;
-  if (o.ciljBaza === undefined) o.ciljBaza = null; // težina kad je cilj postavljen (za smer)
-  return o;
+  return k;
 }
 
 // Snima ceo objekat kilaže.
 function sacuvajKilazu(kilaza) {
   setStavka(KLJUC_KILAZA, JSON.stringify(kilaza));
+  parsirano[KLJUC_KILAZA] = kilaza;
 }

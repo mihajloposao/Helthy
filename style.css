@@ -11,10 +11,10 @@
   --ink: #232f4b;           /* primarni tekst i tamni akcenti */
   --ink-blago: #8a8375;     /* sekundarni tekst (male caps naslovi, oznake) */
   --linija: #e5dac6;        /* ivice i separatori */
-  --pesak: #eee3cd;         /* pozadina trake i "zauzetih" blokova */
-  --crvena: #c0503e;        /* linija trenutnog vremena na traci */
-  --zvezda-off: #d8cbb0;    /* nepopunjena zvezdica u oceni dana / teg */
-  --tekst-blago: #b3a992;   /* najtiši tekst (placeholder, "čuva se automatski") */
+  --pesak: #eee3cd;         /* nepopunjeni deo kalendarskog dana i legende */
+  --crvena: #c0503e;        /* destruktivne akcije (brisanje treninga) */
+  --zvezda-off: #d8cbb0;    /* nepopunjen teg (težina sesije) */
+  --tekst-blago: #b3a992;   /* najtiši tekst (placeholder, hint uz teg-birač) */
   --trening: #b3833f;       /* bronza treninga (blok, tačka, tegovi, akcenti) */
   --obrok: #6b8e4e;         /* zelena obroka (ikona, kalorije, akcenti) */
 }
@@ -25,8 +25,8 @@
   padding: 0;
 }
 
-/* "hidden" atribut mora da pobedi: inače display:flex na karticama (tajmer,
-   prazno stanje) nadjača podrazumevano [hidden]{display:none} pa se vide obe. */
+/* "hidden" atribut mora da pobedi: inače display:flex na elementima unutar
+   sekcija nadjača podrazumevano [hidden]{display:none} pa se vide obe. */
 [hidden] {
   display: none !important;
 }
@@ -82,7 +82,7 @@ input:focus {
 
 /* ===================== ZAJEDNIČKI ELEMENTI ===================== */
 
-/* Male caps naslov sekcije, npr. "DANAŠNJA TRAKA" */
+/* Male caps naslov sekcije, npr. "POSLEDNJI DANI" */
 .naslov-sekcije {
   font-size: 11px;
   font-weight: 600;
@@ -140,26 +140,7 @@ input:focus {
   padding: 12px 4px;
 }
 
-/* Tačka u boji stavke */
-.dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.dot.kvacica {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  color: #fff;
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Legenda ispod trake / kalendara */
+/* Legenda ispod kalendara */
 .legenda {
   display: flex;
   gap: 14px;
@@ -181,411 +162,10 @@ input:focus {
   display: inline-block;
 }
 
-.kocka.okvir { border: 2px solid var(--ink); background: var(--paper-svetlo); }
-.kocka.srafura {
-  background: repeating-linear-gradient(45deg, var(--pesak), var(--pesak) 2px, #dccfb2 2px, #dccfb2 4px);
-}
 .kocka.pola { background: linear-gradient(to top, #44659e 50%, var(--pesak) 50%); }
 .kocka.prazan { border: 1px dashed var(--ink-blago); background: none; }
 
-/* ===================== DANAS: KOMPAKTNA KARTICA TAJMERA ===================== */
-
-/* Ring levo, tekst desno, dugmad u svom redu preko cele širine kartice. */
-.tajmer-kartica {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  margin-top: 14px;
-  padding: 16px;
-  background: var(--paper-svetlo);
-  border: 1px solid var(--linija);
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(35, 47, 75, 0.05);
-}
-
-.ring-omotac {
-  position: relative;
-  width: 132px;
-  flex-shrink: 0;
-}
-
-.ring {
-  width: 100%;
-  transform: rotate(-90deg); /* progres kreće od vrha kruga */
-}
-
-.ring circle {
-  fill: none;
-  stroke-width: 14;
-  stroke-linecap: round;
-}
-
-.ring-pozadina {
-  stroke: var(--pesak);
-}
-
-/* Bez CSS tranzicije: ring se osvežava svake sekunde pa bi animacija treperila */
-#ring-progres {
-  stroke: var(--ink);
-}
-
-.ring-sadrzaj {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 1px;
-}
-
-.tajmer-vreme {
-  font-size: 25px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.3px;
-}
-
-.tajmer-cilj {
-  font-size: 11px;
-  color: var(--ink-blago);
-}
-
-.tajmer-info {
-  flex: 1;
-  min-width: 0; /* dozvoli skraćivanje dugog naziva sa "..." */
-}
-
-.tajmer-info .nadnaslov {
-  margin-bottom: 3px;
-}
-
-.tajmer-naziv {
-  font-size: 17px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tajmer-detalj {
-  font-size: 12px;
-  color: var(--ink-blago);
-  margin-top: 1px;
-}
-
-/* Red dugmadi zauzima celu širinu kartice, ispod prstena i teksta */
-.tajmer-dugmad {
-  flex-basis: 100%;
-  display: flex;
-  gap: 10px;
-}
-
-/* Dugmad tajmera sa ikonom i tekstom (jasnije nego samo ikonice) */
-.tajmer-akcija {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 11px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--linija);
-  background: var(--paper);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.tajmer-akcija .ikona {
-  font-size: 12px;
-}
-
-.tajmer-akcija.tamno {
-  background: var(--ink);
-  color: var(--paper-svetlo);
-  border-color: var(--ink);
-}
-
-/* ===================== ANIMACIJE TAJMERA (dok broji) ===================== */
-
-/* Sve animacije se pale klasom "radi" na kartici (postavlja je JS), a boju
-   aktivne stavke dobijaju kroz CSS promenljivu --boja (takođe iz JS-a).
-   U pauzi nema klase "radi", pa kartica potpuno miruje. */
-
-/* Talasi postoje u HTML-u stalno, ali su skriveni dok tajmer ne radi */
-.tajmer-kartica .ping {
-  display: none;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-
-  /* Luk koji se popunjava glatko klizi (tranzicija od 1s poklopljena sa tikom tajmera). */
-  .tajmer-kartica.radi #ring-progres {
-    transition: stroke-dashoffset 1s linear;
-  }
-
-  /* Blagi stalni oreol da luk deluje kao da je pod naponom */
-  .tajmer-kartica.radi #ring-progres {
-    filter: drop-shadow(0 0 3px var(--boja, var(--ink)));
-  }
-
-  /* Talasi koji se šire iz prstena, u boji stavke (dva, smaknuti za pola ciklusa) */
-  .tajmer-kartica.radi .ping {
-    display: block;
-    position: absolute;
-    inset: 4px;
-    border-radius: 50%;
-    border: 2px solid var(--boja, var(--ink));
-    opacity: 0;
-    pointer-events: none;
-    animation: tajmer-talas 2.6s ease-out infinite;
-  }
-
-  .tajmer-kartica.radi .ping2 {
-    animation-delay: 1.3s;
-  }
-
-  @keyframes tajmer-talas {
-    0%   { transform: scale(0.92); opacity: 0.5; }
-    70%  { transform: scale(1.3);  opacity: 0; }
-    100% { transform: scale(1.3);  opacity: 0; }
-  }
-
-  /* "● U TOKU" lagano diše u boji stavke */
-  .tajmer-kartica.radi #tajmer-status {
-    color: var(--boja, var(--ink));
-    animation: tajmer-disanje 1.6s ease-in-out infinite;
-  }
-
-  @keyframes tajmer-disanje {
-    50% { opacity: 0.45; }
-  }
-
-  /* Play dugme stavke koja upravo radi šalje puls (radar efekat) */
-  .stavka-red.aktivna .play-dugme {
-    animation: tajmer-puls 2s ease-out infinite;
-  }
-
-  @keyframes tajmer-puls {
-    0%   { box-shadow: 0 0 0 0 rgba(35, 47, 75, 0.35); }
-    100% { box-shadow: 0 0 0 10px rgba(35, 47, 75, 0); }
-  }
-}
-
-/* Prazno stanje tajmera: kad ništa ne radi, objašnjava gde/kako se pokreće */
-.tajmer-prazan {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 14px;
-  padding: 18px 16px;
-  background: var(--paper-svetlo);
-  border: 1px dashed var(--linija);
-  border-radius: 16px;
-}
-
-.tajmer-prazan-ikona {
-  width: 46px;
-  height: 46px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-blago);
-  background: var(--paper);
-  border-radius: 50%;
-}
-
-.tajmer-prazan-ikona svg {
-  width: 24px;
-  height: 24px;
-}
-
-.tajmer-prazan-tekst strong {
-  font-size: 15px;
-  display: block;
-}
-
-.tajmer-prazan-tekst p {
-  font-size: 13px;
-  color: var(--ink-blago);
-  margin-top: 3px;
-  line-height: 1.4;
-}
-
-/* Kompaktna legenda u naslovu trake (samo "u toku" i "zauzeto") */
-.legenda-mini {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  letter-spacing: 0;
-  font-weight: 500;
-  text-transform: none;
-}
-
-.legenda-mini .kocka {
-  margin-left: 6px;
-}
-
-/* ===================== DANAS: HORIZONTALNA TRAKA (nekorišćeno, zadržano) ===================== */
-
-.traka-platno {
-  position: relative;
-  height: 56px;
-  background: var(--pesak);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.traka-blok {
-  position: absolute;
-  top: 6px;
-  bottom: 6px;
-  border-radius: 7px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.traka-blok span {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 0 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.traka-blok.zauzeto {
-  top: 0;
-  bottom: 0;
-  border-radius: 0;
-  background: repeating-linear-gradient(45deg, #e7d9bc, #e7d9bc 3px, #ddcdab 3px, #ddcdab 6px);
-  color: #7d6f52;
-}
-
-.traka-blok.sesija {
-  color: #fff;
-}
-
-.traka-blok.u-toku {
-  background: var(--paper-svetlo);
-  border: 2px solid var(--ink);
-}
-
-.traka-blok.u-toku .tacka {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-/* Crvena vertikalna linija "sada" sa satnicom iznad */
-.traka-sada {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  background: var(--crvena);
-}
-
-.traka-sada label {
-  position: absolute;
-  top: 1px;
-  left: 4px;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--crvena);
-  white-space: nowrap;
-}
-
-.traka-sati {
-  position: relative;
-  height: 16px;
-  margin-top: 4px;
-}
-
-.traka-sati span {
-  position: absolute;
-  transform: translateX(-50%);
-  font-size: 10px;
-  color: var(--ink-blago);
-  font-variant-numeric: tabular-nums;
-}
-
-/* ===================== REDOVI STAVKI (Danas + Plan) ===================== */
-
-.stavka-red {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--paper-svetlo);
-  border: 1px solid var(--linija);
-  border-radius: 12px;
-  padding: 12px 14px;
-}
-
-.stavka-red.zavrsena {
-  background: #f8f2e2;
-}
-
-.stavka-red.zavrsena .stavka-naziv {
-  opacity: 0.75;
-}
-
-.stavka-naziv {
-  flex: 1;
-  font-weight: 600;
-  font-size: 15px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.stavka-vreme {
-  font-size: 13px;
-  color: var(--ink-blago);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Ink-popunjeno okruglo dugme — jasno se čita kao "pokreni tajmer" */
-.play-dugme {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  border: none;
-  background: var(--ink);
-  color: var(--paper-svetlo);
-  font-size: 12px;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Aktivna (koja upravo radi) stavka: dugme dobije boju stavke i suptilan prsten */
-.stavka-red.aktivna .play-dugme {
-  box-shadow: 0 0 0 3px rgba(35, 47, 75, 0.12);
-}
-
-.obrisi-dugme {
-  color: var(--ink-blago);
-  font-size: 18px;
-  padding: 0 4px;
-  flex-shrink: 0;
-}
-
-/* Pill sa ciljem, npr. "4h" — boja se postavlja iz JS-a po stavci */
-.cilj-oznaka {
-  font-size: 12px;
-  font-weight: 700;
-  padding: 3px 9px;
-  border-radius: 7px;
-}
-
-/* ===================== PLAN ===================== */
+/* ===================== TABOVI I FORME ===================== */
 
 .plan-tabovi {
   display: flex;
@@ -601,46 +181,6 @@ input:focus {
   font-weight: 600;
 }
 
-.tab-dugme.aktivan {
-  background: var(--ink);
-  color: var(--paper-svetlo);
-  border-color: var(--ink);
-}
-
-.dogadjaj-red {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 12px;
-  background: repeating-linear-gradient(45deg, #efe3c8, #efe3c8 4px, #e8dabb 4px, #e8dabb 8px);
-  border: 1px solid var(--linija);
-}
-
-.dogadjaj-naziv {
-  flex: 1;
-  font-weight: 600;
-  font-size: 15px;
-}
-
-.dogadjaj-vreme {
-  font-size: 13px;
-  color: var(--ink-blago);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Isprekidano dugme "+ fiksni događaj + tačno vreme" */
-.isprekidano {
-  width: 100%;
-  margin-top: 8px;
-  padding: 13px;
-  border: 1.5px dashed var(--ink-blago);
-  border-radius: 12px;
-  color: var(--ink-blago);
-  font-size: 13px;
-  letter-spacing: 1px;
-}
-
 .kartica-forma {
   margin-top: 8px;
   padding: 14px;
@@ -654,6 +194,12 @@ input:focus {
 
 .kartica-forma input[type="text"] {
   width: 100%;
+}
+
+/* Istaknuta forma (novi trening, novi obrok) */
+.kartica-forma.istaknuta {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px rgba(35, 47, 75, 0.06);
 }
 
 .red-polja {
@@ -672,55 +218,6 @@ input:focus {
 
 .red-polja input[type="time"] {
   width: 104px;
-}
-
-.red-polja input[type="number"] {
-  width: 64px;
-}
-
-.malo-dugme {
-  padding: 9px 18px;
-  border-radius: 9px;
-  border: 1px solid var(--linija);
-  background: var(--paper);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.malo-dugme.tamno {
-  background: var(--ink);
-  color: var(--paper-svetlo);
-  border-color: var(--ink);
-}
-
-.biranje-boje {
-  display: flex;
-  gap: 8px;
-}
-
-.boja-dugme {
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
-}
-
-.boja-dugme.izabrana {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-}
-
-.ukupno-red {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 4px;
-  color: var(--ink-blago);
-  font-size: 14px;
-}
-
-.ukupno-red strong {
-  color: var(--ink);
-  font-size: 20px;
 }
 
 .glavno-dugme {
@@ -860,25 +357,6 @@ input:focus {
   color: var(--ink-blago);
 }
 
-.mini-trake {
-  display: flex;
-  gap: 4px;
-}
-
-.mini-traka {
-  flex: 1;
-  height: 5px;
-  border-radius: 3px;
-  overflow: hidden;
-  display: block;
-}
-
-.mini-traka span {
-  display: block;
-  height: 100%;
-  border-radius: 3px;
-}
-
 .dan-vreme {
   font-size: 13px;
   color: var(--ink-blago);
@@ -896,292 +374,6 @@ input:focus {
   padding: 0;
 }
 
-#detalj-traka {
-  margin-top: 20px;
-}
-
-.vtraka {
-  position: relative;
-  margin-left: 34px; /* mesto za oznake sati sa leve strane */
-}
-
-.vtraka-sat {
-  position: absolute;
-  left: 0;
-  right: 0;
-  border-top: 1px solid var(--linija);
-}
-
-.vtraka-sat span {
-  position: absolute;
-  left: -34px;
-  top: -8px;
-  font-size: 11px;
-  color: var(--ink-blago);
-  font-variant-numeric: tabular-nums;
-}
-
-/* left i width se postavljaju inline (kolone za preklapajuće blokove) */
-.vtraka-blok {
-  position: absolute;
-  border-radius: 10px;
-  padding: 6px 12px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-.vtraka-blok strong {
-  font-size: 13px;
-}
-
-.vtraka-blok small {
-  font-size: 11px;
-  color: var(--ink-blago);
-  font-variant-numeric: tabular-nums;
-}
-
-.vtraka-blok.sesija {
-  border-left: 3px solid;
-}
-
-/* Nizak blok (kratka sesija): naziv i vreme u jednom redu */
-.vtraka-blok.kompakt {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.vtraka-blok.kompakt strong,
-.vtraka-blok.kompakt small {
-  white-space: nowrap;
-}
-
-.vtraka-blok.zauzeto {
-  background: repeating-linear-gradient(45deg, #ebdfc2, #ebdfc2 4px, #e3d3b1 4px, #e3d3b1 8px);
-  border: 1px solid #d9c9a5;
-  color: #6f6248;
-}
-
-.vtraka-blok.zauzeto small {
-  color: #8d7f61;
-}
-
-/* Aktivna sesija (Danas): pun okvir u boji stavke + blagi "glow" */
-.vtraka-blok.aktivna {
-  border: 2px solid;
-  box-shadow: 0 0 0 3px rgba(35, 47, 75, 0.08);
-}
-
-/* Kvačica pored naziva kad je stavka dostigla cilj */
-.vtraka-blok .cek {
-  font-size: 11px;
-}
-
-/* Crvena linija trenutnog vremena preko vertikalnog timeline-a (Danas) */
-.vtraka-sada {
-  position: absolute;
-  left: -34px;
-  right: 0;
-  border-top: 2px solid var(--crvena);
-  z-index: 2;
-}
-
-.vtraka-sada span {
-  position: absolute;
-  left: -2px;
-  top: -8px;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--crvena);
-  background: var(--paper);
-  padding-right: 4px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Čekirana obaveza na traci: tanka isprekidana linija preko cele širine */
-.vtraka-obaveza {
-  position: absolute;
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  transform: translateY(-50%);
-  z-index: 3;
-}
-
-.vtraka-obaveza .knob {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--ink);
-  color: #fff;
-  font-size: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-left: -10px;
-  box-shadow: 0 0 0 3px var(--paper);
-}
-
-.vtraka-obaveza .rule {
-  flex: 1;
-  border-top: 1.5px dashed var(--ink-blago);
-  margin: 0 8px;
-  opacity: 0.55;
-}
-
-.vtraka-obaveza .lab {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  background: var(--paper);
-  padding-left: 6px;
-}
-
-.vtraka-obaveza .lab small {
-  color: var(--ink-blago);
-  font-weight: 500;
-  margin-left: 6px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ===================== OBAVEZE (bez tajmera) ===================== */
-
-/* Kvadratni checkbox obaveze — u listi Danas je dugme, u Planu statični marker */
-.obaveza-box {
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  border: 2px solid var(--ink-blago);
-  background: var(--paper);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  color: transparent;
-}
-
-.obaveza-box.on {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: #fff;
-}
-
-/* Čekirana obaveza u listi: prigušena, precrtan naziv */
-.stavka-red.obaveza.on {
-  background: #f8f2e2;
-}
-
-.stavka-red.obaveza.on .stavka-naziv {
-  opacity: 0.7;
-  text-decoration: line-through;
-  text-decoration-color: var(--ink-blago);
-}
-
-/* Oznaka desno u redu obaveze: "čekiraj" (bledo) ili "✓ 09:12" */
-.obaveza-tag {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ink-blago);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
-.obaveza-tag.blago {
-  color: var(--tekst-blago);
-}
-
-/* Razdelnik "ZAVRŠENO" u objedinjenoj listi */
-.lista-razdelnik {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 2px 2px 0;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 1.5px;
-  color: var(--tekst-blago);
-}
-
-.lista-razdelnik::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--linija);
-}
-
-/* "NOVO" značka uz naslov sekcije OBAVEZE na Planu */
-.novo-oznaka {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--paper-svetlo);
-  background: var(--ink);
-  padding: 2px 6px;
-  border-radius: 5px;
-  margin-left: 8px;
-  vertical-align: middle;
-}
-
-/* Istaknuta forma (dodavanje obaveze) + njen hint red */
-.kartica-forma.istaknuta {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 3px rgba(35, 47, 75, 0.06);
-}
-
-.red-polja.izmedju {
-  justify-content: space-between;
-}
-
-.forma-hint {
-  font-size: 12px;
-  color: var(--tekst-blago);
-}
-
-/* "CILJ VS ODRAĐENO" — uporedne trake po stavci */
-.poredjenje-red {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.poredjenje-naziv {
-  width: 96px;
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.poredjenje-traka {
-  flex: 1;
-  height: 8px;
-  background: var(--pesak);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.poredjenje-traka span {
-  display: block;
-  height: 100%;
-  border-radius: 4px;
-}
-
-.poredjenje-brojevi {
-  font-size: 12px;
-  color: var(--ink-blago);
-  font-variant-numeric: tabular-nums;
-  flex-shrink: 0;
-}
-
 /* ===================== DONJA NAVIGACIJA ===================== */
 
 .donja-nav {
@@ -1189,7 +381,7 @@ input:focus {
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 10; /* iznad trake i "sada" linije (z-index 2/3) da ih ne prekriva */
+  z-index: 10; /* iznad sadržaja ekrana da je ništa ne prekriva */
   display: flex;
   justify-content: space-around;
   background: var(--paper-svetlo);
@@ -1215,160 +407,6 @@ input:focus {
 .nav-dugme.aktivan {
   color: var(--ink);
   font-weight: 700;
-}
-
-/* ===================== OCENA DANA (Detalj) ===================== */
-
-/* Zajednički naslov "OCENA DANA" iznad zvezdica */
-.ocena-naslov {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 2px;
-  color: var(--ink-blago);
-}
-
-/* Skupljeno stanje: kartica-dugme koje se na klik otvara u editor */
-.ocena-skupljeno {
-  width: 100%;
-  margin-top: 18px;
-  padding: 14px 16px;
-  background: var(--paper-svetlo);
-  border: 1px solid var(--linija);
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(35, 47, 75, 0.05);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  text-align: left;
-}
-
-.ocena-skupljeno:hover {
-  border-color: var(--ink);
-}
-
-.ocena-skupljeno-levo {
-  min-width: 0;
-}
-
-.ocena-skupljeno .ocena-naslov {
-  display: block;
-  margin-bottom: 4px;
-}
-
-.ocena-skupljeno-red {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ocena-zvezde-mini {
-  display: flex;
-  gap: 1px;
-}
-
-.ocena-zvezda-mini {
-  font-size: 16px;
-  line-height: 1;
-  color: var(--zvezda-off);
-}
-
-.ocena-zvezda-mini.puna {
-  color: var(--ink);
-}
-
-.ocena-oznaka {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.ocena-strelica {
-  font-size: 22px;
-  color: var(--ink-blago);
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-/* Otvoreno stanje: pun editor sa velikim zvezdicama i beleškom */
-.ocena-otvoreno {
-  margin-top: 18px;
-  padding: 16px;
-  background: var(--paper-svetlo);
-  border: 1px solid var(--linija);
-  border-radius: 16px;
-  box-shadow: 0 2px 8px rgba(35, 47, 75, 0.05);
-}
-
-.ocena-otvoreno-zaglavlje {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.ocena-sakrij {
-  font-size: 18px;
-  color: var(--ink-blago);
-  line-height: 1;
-  padding: 2px 4px;
-}
-
-.ocena-zvezde {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-  margin-top: 10px;
-}
-
-.ocena-zvezda {
-  font-size: 38px;
-  line-height: 1;
-  padding: 0 3px;
-  color: var(--zvezda-off);
-  transition: color 0.12s;
-}
-
-.ocena-zvezda.puna {
-  color: var(--ink);
-}
-
-.ocena-oznaka-centar {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  text-align: center;
-  margin-top: 6px;
-}
-
-.ocena-belezka {
-  width: 100%;
-  margin-top: 12px;
-  min-height: 54px;
-  resize: none;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--linija);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-.ocena-belezka:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: -1px;
-}
-
-.ocena-belezka::placeholder {
-  color: var(--tekst-blago);
-}
-
-.ocena-auto {
-  font-size: 11px;
-  color: var(--tekst-blago);
-  margin-top: 8px;
-  text-align: right;
 }
 
 /* ===================== KILAŽA ===================== */
@@ -1596,12 +634,6 @@ input:focus {
   background: var(--paper-svetlo);
 }
 
-.kilaza-stepper .val b {
-  font-size: 26px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
 .kilaza-stepper .val small {
   font-size: 13px;
   color: var(--ink-blago);
@@ -1639,7 +671,7 @@ input:focus {
 
 /* ===================== TRENING ===================== */
 
-/* Ikonica bučice (naslov, red, blok na traci) */
+/* Ikonica bučice (naslov sekcije, red u listi poslednjih dana) */
 .teg-ikona {
   width: 15px;
   height: 15px;
@@ -1651,11 +683,6 @@ input:focus {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-}
-
-/* "NOVO" značka u bronzi (umesto ink) za trening */
-.novo-oznaka.trening {
-  background: var(--trening);
 }
 
 /* Textarea u formama (trening linije + beleška) */
@@ -1684,7 +711,7 @@ input:focus {
 #trening-linije { min-height: 76px; }
 #trening-beleska { min-height: 54px; }
 
-/* Red treninga u Planu (tap otvara detalj) */
+/* Red treninga u Detalju dana (tap otvara detalj treninga) */
 .trening-red {
   display: flex;
   align-items: center;
@@ -1732,7 +759,7 @@ input:focus {
   flex-shrink: 0;
 }
 
-/* Mini tegovi (red + blok na traci) */
+/* Mini tegovi (red treninga u Detalju dana) */
 .teg-mini {
   display: inline-flex;
   align-items: flex-end;
@@ -1911,30 +938,6 @@ input:focus {
   font-weight: 600;
 }
 
-/* --- Trening blok na vertikalnoj traci --- */
-.vtraka-blok.trening {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border-left: 3px solid var(--trening);
-  background: rgba(179, 131, 63, 0.16);
-}
-
-.trening-blok-info {
-  min-width: 0;
-}
-
-.vtraka-blok.trening strong {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.vtraka-blok.trening small {
-  color: #8a7a55;
-}
-
 /* ===================== EKRAN UČITAVANJA ===================== */
 
 #ucitavanje {
@@ -2111,16 +1114,6 @@ input:focus {
   text-align: center;
   padding-left: 4px;
   padding-right: 4px;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Kalorije uz dan u listi "Poslednji dani" */
-.dan-kcal {
-  display: block;
-  margin-top: 5px;
-  font-size: 11px;
-  color: var(--ink-blago);
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 

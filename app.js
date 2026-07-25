@@ -8,25 +8,41 @@
  * postojeći uneti treninzi/obroci/kilaža automatski vide i ovde. Sve sinhrone
  * funkcije rade nad memorijskim kešom koji storage.js napuni pri pokretanju.
  *
- * Redosled u fajlu: konstante → stanje → datumi/format → navigacija →
- * (kilaža + obroci + trening render/logika, preuzeto iz Fokusa) →
- * lista treninga → init.
+ * Redosled u fajlu: konstante → stanje → datumi/format → DOM pomoćne →
+ * navigacija → (kilaža + obroci + trening render/logika, preuzeto iz Fokusa) →
+ * istorija i detalj dana → init.
  */
 
 /* ===================== KONSTANTE ===================== */
 
-var DANI = ["Nedelja", "Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota"];
-var DANI_KRATKO = ["NED", "PON", "UTO", "SRE", "ČET", "PET", "SUB"];
-var MESECI = ["januar", "februar", "mart", "april", "maj", "jun", "jul", "avgust", "septembar", "oktobar", "novembar", "decembar"];
+const DANI = ["Nedelja", "Ponedeljak", "Utorak", "Sreda", "Četvrtak", "Petak", "Subota"];
+const DANI_KRATKO = ["NED", "PON", "UTO", "SRE", "ČET", "PET", "SUB"];
+const MESECI = ["januar", "februar", "mart", "april", "maj", "jun", "jul", "avgust", "septembar", "oktobar", "novembar", "decembar"];
+
+// Reč uz težinu trening-sesije (indeks = broj tegova 1–5).
+const TRENING_LABELE = ["", "Lako", "Umereno", "Solidno", "Naporno", "Maksimalno"];
+
+// Putanje inline SVG ikonica (bučica i pribor za jelo), crtaju se preko ikonaSvg.
+const IKONA_TEG = "M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12";
+const IKONA_OBROK = "M6 3v8a2 2 0 0 0 4 0V3M8 11v10M18 3c-1.7 1-2.5 3-2.5 5.5S16.3 13 18 13v8";
+
+// Brojčana polja forme za obrok: [labela, ključ u draftu, CSS klasa polja].
+// Isti spisak crta polja i vezuje ih za draft, pa ne mogu da se raziđu.
+const OBROK_POLJA = [
+  ["kcal", "kcal", "obrok-kcal"],
+  ["P (g)", "protein", "obrok-protein"],
+  ["UH (g)", "ugljeni", "obrok-ugljeni"],
+  ["M (g)", "masti", "obrok-masti"]
+];
 
 /* ===================== STANJE UI ===================== */
 
-var stanje = {
+const stanje = {
   sekcija: "kilaza",          // kilaza | treninzi | trening | istorija | detalj
   kilazaOpseg: "30d",         // opseg grafika kilaže: 7d | 30d | sve
   kilazaDraft: null,          // vrednost u steperu (kg) pre čuvanja; null = tek otvoreno
   kilazaSacuvano: false,      // prolazno: "Sačuvano ✓" posle upisa
-  treningTezina: 3,           // izabrana težina (1–5) u formi za novi trening
+  treningTezina: 3,           // težina (1–5) izabrana u formi za novi trening
   treningDatum: null,         // datum treninga otvorenog na Trening (detalj) ekranu
   treningId: null,            // id treninga otvorenog na Trening (detalj) ekranu
   treningNazad: "detalj",     // kuda vodi "nazad" sa Trening detalja (detalj | treninzi)
@@ -39,60 +55,90 @@ var stanje = {
 
 // "YYYY-MM-DD" iz Date, u LOKALNOJ zoni (ne toISOString jer radi u UTC).
 function dateKey(d) {
-  var m = String(d.getMonth() + 1).padStart(2, "0");
-  var dan = String(d.getDate()).padStart(2, "0");
-  return d.getFullYear() + "-" + m + "-" + dan;
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dan = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${dan}`;
 }
 
-function danasKey() {
-  return dateKey(new Date());
-}
+const danasKey = () => dateKey(new Date());
 
 // Jedinstven id (vreme + slučajni deo) — dovoljno za jednokorisničku app.
-function noviId() {
-  return Date.now() + "-" + Math.random().toString(36).slice(2, 8);
-}
+const noviId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 function datumIzKljuca(kljuc) {
-  var delovi = kljuc.split("-");
-  return new Date(Number(delovi[0]), Number(delovi[1]) - 1, Number(delovi[2]));
+  const [g, m, d] = kljuc.split("-");
+  return new Date(Number(g), Number(m) - 1, Number(d));
 }
 
 // Pomera datum-ključ za dati broj dana (npr. -1 za juče).
 function pomeriDatum(kljuc, brojDana) {
-  var d = datumIzKljuca(kljuc);
+  const d = datumIzKljuca(kljuc);
   d.setDate(d.getDate() + brojDana);
   return dateKey(d);
 }
 
 // "2026-07-04" → "Subota, 4. jul"
 function imeDatuma(kljuc) {
-  var d = datumIzKljuca(kljuc);
-  return DANI[d.getDay()] + ", " + d.getDate() + ". " + MESECI[d.getMonth()];
+  const d = datumIzKljuca(kljuc);
+  return `${DANI[d.getDay()]}, ${d.getDate()}. ${MESECI[d.getMonth()]}`;
+}
+
+// "2026-07-04" → "4. jul" (za oznake na grafiku i naslov stepera).
+function kratakDatum(kljuc) {
+  const d = datumIzKljuca(kljuc);
+  return `${d.getDate()}. ${MESECI[d.getMonth()]}`;
 }
 
 // Minuti → "3h 53m", "45m" ili "0m" (za zbirove vremena).
 function formatTrajanje(minuti) {
-  minuti = Math.round(minuti);
-  var h = Math.floor(minuti / 60);
-  var m = minuti % 60;
-  if (h === 0) return m + "m";
-  if (m === 0) return h + "h";
-  return h + "h " + m + "m";
+  const ukupno = Math.round(minuti);
+  const h = Math.floor(ukupno / 60);
+  const m = ukupno % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 // "09:00" → broj minuta od ponoći (540).
 function vremeUMinute(tekst) {
-  var delovi = tekst.split(":");
-  return Number(delovi[0]) * 60 + Number(delovi[1]);
+  const [h, m] = tekst.split(":");
+  return Number(h) * 60 + Number(m);
 }
 
-// Sprečava ubacivanje HTML-a kroz nazive koje korisnik unosi.
-function escapeHtml(tekst) {
-  var div = document.createElement("div");
-  div.textContent = tekst;
-  return div.innerHTML;
+// "1.850 kcal" — hiljade sa tačkom da se veliki brojevi lakše čitaju.
+const formatKcal = (n) => Math.round(n).toLocaleString("sr-RS");
+
+// Grami: bez decimala ("42 g"), jer se unose kao celi brojevi.
+const formatGrami = (n) => `${Math.round(n)} g`;
+
+// Kilaža → "72,4" (srpski decimalni zapis).
+const formatKg = (v) => v.toFixed(1).replace(".", ",");
+
+// Sprečava ubacivanje HTML-a kroz nazive koje korisnik unosi. Zamena po tabeli
+// (bez pomoćnog DOM elementa) — pokriva i navodnike, pa je bezbedno i unutar
+// atributa (value="…").
+const HTML_ZAMENE = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+const escapeHtml = (tekst) => String(tekst).replace(/[&<>"']/g, (z) => HTML_ZAMENE[z]);
+
+/* ===================== DOM POMOĆNE ===================== */
+
+// Kratice za obrasce koji se ponavljaju u svakoj render funkciji.
+const el = (id) => document.getElementById(id);
+
+// Kači "click" handler na sve elemente koji odgovaraju selektoru unutar
+// kontejnera. Element na koji je handler zakačen je e.currentTarget.
+function poveziKlik(kontejner, selektor, handler) {
+  kontejner.querySelectorAll(selektor).forEach((cvor) => cvor.addEventListener("click", handler));
 }
+
+// Inline SVG ikonica: ista osnova (24×24, obris u currentColor, zaobljeni
+// krajevi) za sve ikone; "dodatno" nosi atribute specifične za jednu putanju.
+const ikonaSvg = (klasa, putanja, dodatno) =>
+  `<svg class="${klasa}" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
+  `stroke-width="2" stroke-linecap="round"${dodatno || ""}><path d="${putanja}"/></svg>`;
+
+const treningIkonaSvg = () => ikonaSvg("teg-ikona", IKONA_TEG);
+const obrokIkonaSvg = () => ikonaSvg("obrok-ikona", IKONA_OBROK, ' stroke-linejoin="round"');
 
 /* ===================== NAVIGACIJA ===================== */
 
@@ -100,10 +146,9 @@ function escapeHtml(tekst) {
 function prikaziSekciju(naziv) {
   stanje.sekcija = naziv;
 
-  var sekcije = document.querySelectorAll("main > section");
-  for (var i = 0; i < sekcije.length; i++) {
-    sekcije[i].hidden = sekcije[i].id !== "sekcija-" + naziv;
-  }
+  document.querySelectorAll("main > section").forEach((sekcija) => {
+    sekcija.hidden = sekcija.id !== "sekcija-" + naziv;
+  });
 
   // Svaki ulazak na Kilažu kreće sa skupljenim/neizmenjenim steperom.
   if (naziv === "kilaza") {
@@ -112,33 +157,20 @@ function prikaziSekciju(naziv) {
   }
 
   // Bottom nav: pod-ekrani ostaju pod svojim tabom.
-  var navTab = naziv;
+  let navTab = naziv;
   if (naziv === "trening") navTab = "treninzi";
   if (naziv === "detalj") navTab = "istorija";
-  var dugmad = document.querySelectorAll(".nav-dugme");
-  for (var j = 0; j < dugmad.length; j++) {
-    dugmad[j].classList.toggle("aktivan", dugmad[j].dataset.sekcija === navTab);
-  }
+  document.querySelectorAll(".nav-dugme").forEach((dugme) => {
+    dugme.classList.toggle("aktivan", dugme.dataset.sekcija === navTab);
+  });
 
   osveziAktivnuSekciju();
 }
 
 // Ponovo iscrtava sadržaj trenutno otvorene sekcije.
 function osveziAktivnuSekciju() {
-  if (stanje.sekcija === "kilaza") renderKilaza();
-  if (stanje.sekcija === "treninzi") renderTreninzi();
-  if (stanje.sekcija === "trening") renderTrening();
-  if (stanje.sekcija === "istorija") renderIstorija();
-  if (stanje.sekcija === "detalj") renderDetalj();
-}
-
-// Kači "click" handler na sve elemente koji odgovaraju selektoru unutar
-// kontejnera (this = element). Objedinjuje obrazac iz render funkcija.
-function poveziKlik(kontejner, selektor, handler) {
-  var elementi = kontejner.querySelectorAll(selektor);
-  for (var i = 0; i < elementi.length; i++) {
-    elementi[i].addEventListener("click", handler);
-  }
+  const render = RENDERI[stanje.sekcija];
+  if (render) render();
 }
 
 /* ===================================================================
@@ -147,67 +179,42 @@ function poveziKlik(kontejner, selektor, handler) {
  * dugmad, datum za nove treninge) prilagođena ovoj samostalnoj aplikaciji.
  * =================================================================== */
 
-/* ===================== KONSTANTE (DEO 2) ===================== */
-
-// Reč uz težinu trening-sesije (indeks = broj tegova 1–5).
-var TRENING_LABELE = ["", "Lako", "Umereno", "Solidno", "Naporno", "Maksimalno"];
-
-// Bronzana boja treninga (ista kao paleta[2]) — blok na traci i akcenti.
-var TRENING_BOJA = "#b3833f";
-
 /* ===================== KALKULACIJE: OBROCI ===================== */
 
 // Zbir svih obroka dana: kalorije, makroi i broj obroka. Stariji obroci
 // nemaju upisane masti — "|| 0" ih tretira kao nulu umesto da zbir postane NaN.
 function zbirObroka(datum) {
-  var obroci = ucitajObroke(datum);
-  var zbir = { kcal: 0, protein: 0, ugljeni: 0, masti: 0, broj: obroci.length };
-  for (var i = 0; i < obroci.length; i++) {
-    zbir.kcal += obroci[i].kcal || 0;
-    zbir.protein += obroci[i].protein || 0;
-    zbir.ugljeni += obroci[i].ugljeni || 0;
-    zbir.masti += obroci[i].masti || 0;
-  }
+  const obroci = ucitajObroke(datum);
+  const zbir = { kcal: 0, protein: 0, ugljeni: 0, masti: 0, broj: obroci.length };
+  obroci.forEach((o) => {
+    zbir.kcal += o.kcal || 0;
+    zbir.protein += o.protein || 0;
+    zbir.ugljeni += o.ugljeni || 0;
+    zbir.masti += o.masti || 0;
+  });
   return zbir;
 }
 
-// "1.850 kcal" — hiljade sa tačkom da se veliki brojevi lakše čitaju.
-function formatKcal(n) {
-  return Math.round(n).toLocaleString("sr-RS");
-}
-
-// Grami: bez decimala ("42 g"), jer se unose kao celi brojevi.
-function formatGrami(n) {
-  return Math.round(n) + " g";
-}
+// "obrok" / "obroka" — da zaglavlje sekcije zvuči prirodno.
+const recObroka = (n) => (n === 1 ? "obrok" : "obroka");
 
 /* ===================== TRENING ===================== */
 
-// Ikonica bučice (koristi se u naslovu, redu i bloku na traci).
-function treningIkonaSvg() {
-  return '<svg class="teg-ikona" viewBox="0 0 24 24"><path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12" ' +
-    'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
-}
-
 // Trajanje treninga (od–do) u minutima.
-function treningMinuta(t) {
-  return vremeUMinute(t.do) - vremeUMinute(t.od);
-}
+const treningMinuta = (t) => vremeUMinute(t.do) - vremeUMinute(t.od);
 
 // Mali prikaz tegova (5 stubića) popunjenih do date težine.
-// klasa: "teg-mini" (red/traka) ili "teg-veliki" (detalj ekran).
+// klasa: "teg-mini" (red u listi) ili "teg-veliki" (detalj ekran).
 function tegoviHtml(tezina, klasa) {
-  var s = "";
-  for (var i = 1; i <= 5; i++) {
-    s += '<span class="teg-bar' + (i <= tezina ? " puna" : "") + '"></span>';
-  }
-  return '<span class="' + klasa + '">' + s + "</span>";
+  const stubici = [1, 2, 3, 4, 5]
+    .map((i) => `<span class="teg-bar${i <= tezina ? " puna" : ""}"></span>`).join("");
+  return `<span class="${klasa}">${stubici}</span>`;
 }
 
 // Ekran "Treninzi": samo unos novog treninga za DANAS (naslov sa datumom +
 // teg-birač). Pregled ranijih treninga je na Istoriji, po danu.
 function renderTreninzi() {
-  var oznaka = document.getElementById("trening-danas-datum");
+  const oznaka = el("trening-danas-datum");
   if (oznaka) oznaka.textContent = imeDatuma(danasKey()).toUpperCase();
   crtajTegBirac();
 }
@@ -215,18 +222,17 @@ function renderTreninzi() {
 // (Pre)crta 5 tegova u formi + reč težine. Poziva se pri renderu i pri tapu
 // (u mestu — ne dira ostala polja forme koja korisnik popunjava).
 function crtajTegBirac() {
-  var birac = document.getElementById("trening-tezina");
+  const birac = el("trening-tezina");
   if (!birac) return;
-  var t = stanje.treningTezina;
-  var html = "";
-  for (var i = 1; i <= 5; i++) {
-    html += '<button type="button" class="teg-dugme' + (i <= t ? " puna" : "") + '" data-teg="' + i + '"></button>';
-  }
-  html += '<span class="teg-oznaka">' + TRENING_LABELE[t] + " · " + t + "/5</span>";
-  birac.innerHTML = html;
+  const t = stanje.treningTezina;
 
-  poveziKlik(birac, ".teg-dugme", function () {
-    stanje.treningTezina = Number(this.dataset.teg);
+  birac.innerHTML =
+    [1, 2, 3, 4, 5].map((i) =>
+      `<button type="button" class="teg-dugme${i <= t ? " puna" : ""}" data-teg="${i}"></button>`).join("") +
+    `<span class="teg-oznaka">${TRENING_LABELE[t]} · ${t}/5</span>`;
+
+  poveziKlik(birac, ".teg-dugme", (e) => {
+    stanje.treningTezina = Number(e.currentTarget.dataset.teg);
     crtajTegBirac();
   });
 }
@@ -242,156 +248,140 @@ function otvoriTrening(datum, id, izvor) {
 
 // Detaljni ekran treninga: termin, težina (tegovi), šta sam radio, beleška.
 function renderTrening() {
-  var kontejner = document.getElementById("trening-sadrzaj");
-  var t = nadjiTrening(stanje.treningDatum, stanje.treningId);
+  const kontejner = el("trening-sadrzaj");
+  const t = nadjiTrening(stanje.treningDatum, stanje.treningId);
   if (t === null) { // obrisan u međuvremenu
     prikaziSekciju(stanje.treningNazad);
     return;
   }
-  var d = datumIzKljuca(stanje.treningDatum);
-  var nazadOznaka = stanje.treningNazad === "detalj" ? "‹ Dan" : "‹ Treninzi";
+  const d = datumIzKljuca(stanje.treningDatum);
+  const nazadOznaka = stanje.treningNazad === "detalj" ? "‹ Dan" : "‹ Treninzi";
 
   // Linije "šta sam radio": svaka se deli na "—" (levo naziv, desno detalj).
-  var linijeHtml = "";
-  var redovi = (t.linije || "").split("\n");
-  for (var i = 0; i < redovi.length; i++) {
-    var red = redovi[i].trim();
-    if (red === "") continue;
-    var delovi = red.split("—");
-    var levo = delovi[0].trim();
-    var desno = delovi.length > 1 ? delovi.slice(1).join("—").trim() : "";
-    linijeHtml +=
-      '<div class="trening-vezba">' +
-        '<span class="trening-vezba-naziv">' + escapeHtml(levo) + "</span>" +
-        (desno ? '<span class="trening-vezba-detalj">' + escapeHtml(desno) + "</span>" : "") +
+  const linijeHtml = (t.linije || "").split("\n").map((red) => {
+    const tekst = red.trim();
+    if (tekst === "") return "";
+    const delovi = tekst.split("—");
+    const levo = delovi[0].trim();
+    const desno = delovi.length > 1 ? delovi.slice(1).join("—").trim() : "";
+    return '<div class="trening-vezba">' +
+        `<span class="trening-vezba-naziv">${escapeHtml(levo)}</span>` +
+        (desno ? `<span class="trening-vezba-detalj">${escapeHtml(desno)}</span>` : "") +
       "</div>";
-  }
+  }).join("");
 
-  var html =
+  let html =
     '<header class="ekran-zaglavlje">' +
       "<div>" +
-        '<button class="nazad-dugme" id="trening-nazad">' + nazadOznaka + "</button>" +
-        '<p class="nadnaslov">TRENING · ' + DANI[d.getDay()].toUpperCase() + "</p>" +
-        "<h1>" + escapeHtml(t.naziv) + "</h1>" +
+        `<button class="nazad-dugme" id="trening-nazad">${nazadOznaka}</button>` +
+        `<p class="nadnaslov">TRENING · ${DANI[d.getDay()].toUpperCase()}</p>` +
+        `<h1>${escapeHtml(t.naziv)}</h1>` +
       "</div>" +
       '<div class="zbir">' +
-        "<strong>" + formatTrajanje(treningMinuta(t)) + "</strong>" +
-        "<small>" + t.od + "–" + t.do + "</small>" +
+        `<strong>${formatTrajanje(treningMinuta(t))}</strong>` +
+        `<small>${t.od}–${t.do}</small>` +
       "</div>" +
     "</header>" +
 
     '<p class="naslov-sekcije">TERMIN</p>' +
     '<div class="trening-termin">' +
-      '<span class="trening-termin-vreme">' + t.od + "</span>" +
+      `<span class="trening-termin-vreme">${t.od}</span>` +
       '<span class="trening-termin-traka"></span>' +
-      '<span class="trening-termin-vreme">' + t.do + "</span>" +
+      `<span class="trening-termin-vreme">${t.do}</span>` +
     "</div>" +
 
     '<p class="naslov-sekcije">TEŽINA SESIJE</p>' +
     '<div class="trening-tezina-kartica">' +
       tegoviHtml(t.tezina, "teg-veliki") +
-      '<p class="trening-tezina-oznaka">' + TRENING_LABELE[t.tezina] +
-        ' <span>· ' + t.tezina + "/5</span></p>" +
+      `<p class="trening-tezina-oznaka">${TRENING_LABELE[t.tezina]}` +
+        ` <span>· ${t.tezina}/5</span></p>` +
     "</div>";
 
   if (linijeHtml) {
-    html += '<p class="naslov-sekcije">ŠTA SAM RADIO</p><div class="lista">' + linijeHtml + "</div>";
+    html += `<p class="naslov-sekcije">ŠTA SAM RADIO</p><div class="lista">${linijeHtml}</div>`;
   }
   if (t.beleska && t.beleska.trim() !== "") {
     html += '<p class="naslov-sekcije">BELEŠKA</p>' +
-      '<div class="trening-beleska">' + escapeHtml(t.beleska) + "</div>";
+      `<div class="trening-beleska">${escapeHtml(t.beleska)}</div>`;
   }
 
   html += '<button class="obrisi-trening" id="trening-obrisi">Obriši trening</button>';
 
   kontejner.innerHTML = html;
-  document.getElementById("trening-nazad").addEventListener("click", function () {
-    prikaziSekciju(stanje.treningNazad);
-  });
-  document.getElementById("trening-obrisi").addEventListener("click", function () {
-    if (confirm('Obrisati trening "' + t.naziv + '"?')) {
+  el("trening-nazad").addEventListener("click", () => prikaziSekciju(stanje.treningNazad));
+  el("trening-obrisi").addEventListener("click", () => {
+    if (confirm(`Obrisati trening "${t.naziv}"?`)) {
       obrisiTrening(stanje.treningDatum, stanje.treningId);
       prikaziSekciju(stanje.treningNazad);
     }
   });
 }
 
-/* (U Fokusu je ovde stajao renderDetaljObroke — prikaz obroka u Detalju dana.
-   Ovde ne postoji taj ekran, pa je izostavljen; obroci se vide na Kilaži.) */
-
 /* ===================== OBROCI (unos na Kilaži) ===================== */
-
-// Ikonica obroka (viljuška i nož) — koristi se uz naslove sekcija.
-function obrokIkonaSvg() {
-  return '<svg class="obrok-ikona" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M6 3v8a2 2 0 0 0 4 0V3M8 11v10M18 3c-1.7 1-2.5 3-2.5 5.5S16.3 13 18 13v8"/></svg>';
-}
 
 // Kartica zbira: velike kalorije levo, makroi desno. Koristi je i Kilaža
 // ("kcal danas") i Detalj dana ("kcal ukupno").
-function zbirObrokaHtml(zbir, oznakaKcal) {
-  return '<div class="obrok-zbir">' +
-    '<div class="obrok-zbir-glavno"><b>' + formatKcal(zbir.kcal) + "</b><small>" + oznakaKcal + "</small></div>" +
+const zbirObrokaHtml = (zbir, oznakaKcal) =>
+  '<div class="obrok-zbir">' +
+    `<div class="obrok-zbir-glavno"><b>${formatKcal(zbir.kcal)}</b><small>${oznakaKcal}</small></div>` +
     '<div class="obrok-zbir-makroi">' +
-      "<span><b>" + formatGrami(zbir.protein) + "</b><small>proteini</small></span>" +
-      "<span><b>" + formatGrami(zbir.ugljeni) + "</b><small>ugljeni h.</small></span>" +
-      "<span><b>" + formatGrami(zbir.masti) + "</b><small>masti</small></span>" +
+      `<span><b>${formatGrami(zbir.protein)}</b><small>proteini</small></span>` +
+      `<span><b>${formatGrami(zbir.ugljeni)}</b><small>ugljeni h.</small></span>` +
+      `<span><b>${formatGrami(zbir.masti)}</b><small>masti</small></span>` +
     "</div>" +
   "</div>";
-}
 
 // Makroi jednog obroka (P / UH / M) — isti red se koristi na Kilaži i u Detalju.
-function obrokMakroiHtml(o) {
-  return '<span class="obrok-makroi">' +
-    "<b>" + formatKcal(o.kcal) + " kcal</b>" +
-    "<span>P " + formatGrami(o.protein) + "</span>" +
-    "<span>UH " + formatGrami(o.ugljeni) + "</span>" +
-    "<span>M " + formatGrami(o.masti || 0) + "</span>" +
+const obrokMakroiHtml = (o) =>
+  '<span class="obrok-makroi">' +
+    `<b>${formatKcal(o.kcal)} kcal</b>` +
+    `<span>P ${formatGrami(o.protein)}</span>` +
+    `<span>UH ${formatGrami(o.ugljeni)}</span>` +
+    `<span>M ${formatGrami(o.masti || 0)}</span>` +
   "</span>";
-}
 
-// Jedan red obroka u listi (opis + makroi + dugme za brisanje).
-function obrokRedHtml(o) {
-  return '<div class="obrok-red" data-id="' + o.id + '">' +
+// Jedan red obroka: opis + makroi. Na Kilaži nosi i dugme za brisanje (uz
+// data-id koji ga vezuje za obrok); u Detalju dana je istorija, pa samo prikaz.
+const obrokRedHtml = (o, saBrisanjem) =>
+  `<div class="obrok-red"${saBrisanjem ? ` data-id="${o.id}"` : ""}>` +
     '<span class="obrok-info">' +
-      '<span class="obrok-opis">' + escapeHtml(o.opis) + "</span>" +
+      `<span class="obrok-opis">${escapeHtml(o.opis)}</span>` +
       obrokMakroiHtml(o) +
     "</span>" +
-    '<button class="obrok-obrisi" title="Obriši obrok" aria-label="Obriši obrok">×</button>' +
+    (saBrisanjem ? '<button class="obrok-obrisi" title="Obriši obrok" aria-label="Obriši obrok">×</button>' : "") +
   "</div>";
-}
+
+// Lista obroka u zajedničkom omotaču (Kilaža i Detalj dana).
+const obrociListaHtml = (obroci, saBrisanjem) =>
+  '<div class="lista obroci-lista">' +
+    obroci.map((o) => obrokRedHtml(o, saBrisanjem)).join("") +
+  "</div>";
 
 // Cela sekcija obroka na Kilaži: zbir dana, lista i forma za novi unos.
 function renderObrociHtml() {
-  var datum = danasKey();
-  var obroci = ucitajObroke(datum);
-  var zbir = zbirObroka(datum);
-  var d = stanje.obrokDraft;
+  const datum = danasKey();
+  const obroci = ucitajObroke(datum);
+  const zbir = zbirObroka(datum);
+  const d = stanje.obrokDraft;
 
-  var html = '<div class="obroci-blok">';
+  let html = '<div class="obroci-blok">';
 
-  html += '<p class="naslov-sekcije"><span class="obrok-naslov">' + obrokIkonaSvg() +
-    " OBROCI · " + kratakDatum(datum).toUpperCase() + "</span>" +
-    '<span class="desno">' + zbir.broj + " " + recObroka(zbir.broj) + "</span></p>";
+  html += `<p class="naslov-sekcije"><span class="obrok-naslov">${obrokIkonaSvg()}` +
+    ` OBROCI · ${kratakDatum(datum).toUpperCase()}</span>` +
+    `<span class="desno">${zbir.broj} ${recObroka(zbir.broj)}</span></p>`;
 
   // Zbir dana — prikazujemo ga i kad je nula, da unos ima jasan cilj.
   html += zbirObrokaHtml(zbir, "kcal danas");
 
-  if (obroci.length) {
-    html += '<div class="lista obroci-lista">';
-    for (var i = 0; i < obroci.length; i++) html += obrokRedHtml(obroci[i]);
-    html += "</div>";
-  }
+  if (obroci.length) html += obrociListaHtml(obroci, true);
 
   html += '<div class="kartica-forma istaknuta obrok-forma">' +
     '<input class="obrok-opis-polje" type="text" maxlength="60" ' +
-      'placeholder="Obrok — npr. Piletina sa pirinčem" value="' + escapeHtml(d.opis) + '">' +
+      `placeholder="Obrok — npr. Piletina sa pirinčem" value="${escapeHtml(d.opis)}">` +
     '<div class="red-polja obrok-brojevi">' +
-      '<label>kcal <input class="obrok-kcal" type="text" inputmode="numeric" placeholder="0" value="' + escapeHtml(d.kcal) + '"></label>' +
-      '<label>P (g) <input class="obrok-protein" type="text" inputmode="numeric" placeholder="0" value="' + escapeHtml(d.protein) + '"></label>' +
-      '<label>UH (g) <input class="obrok-ugljeni" type="text" inputmode="numeric" placeholder="0" value="' + escapeHtml(d.ugljeni) + '"></label>' +
-      '<label>M (g) <input class="obrok-masti" type="text" inputmode="numeric" placeholder="0" value="' + escapeHtml(d.masti) + '"></label>' +
+      OBROK_POLJA.map(([labela, kljuc, klasa]) =>
+        `<label>${labela} <input class="${klasa}" type="text" inputmode="numeric" ` +
+        `placeholder="0" value="${escapeHtml(d[kljuc])}"></label>`).join("") +
     "</div>" +
     '<button class="obrok-dodaj glavno-dugme">+ Dodaj obrok</button>' +
   "</div>";
@@ -399,48 +389,37 @@ function renderObrociHtml() {
   return html + "</div>";
 }
 
-// "obrok" / "obroka" — da zaglavlje sekcije zvuči prirodno.
-function recObroka(n) {
-  return n === 1 ? "obrok" : "obroka";
-}
-
 // Čita broj iz polja forme: prazno = 0, zarez radi kao decimalna tačka.
 // Vraća null ako je uneto nešto što nije broj ili je negativno.
 function brojIzPolja(tekst) {
-  var t = String(tekst).trim().replace(",", ".");
+  const t = String(tekst).trim().replace(",", ".");
   if (t === "") return 0;
-  var v = parseFloat(t);
-  if (isNaN(v) || v < 0) return null;
-  return v;
+  const v = parseFloat(t);
+  return isNaN(v) || v < 0 ? null : v;
 }
 
 // Povezuje formu i listu obroka (poziva se iz renderKilaza posle innerHTML).
 function poveziObroke(kontejner) {
-  var d = stanje.obrokDraft;
+  const d = stanje.obrokDraft;
 
   // Draft se pamti na svaki otkucaj da re-render (npr. stepper) ne obriše unos.
-  var polja = [
-    [".obrok-opis-polje", "opis"],
-    [".obrok-kcal", "kcal"],
-    [".obrok-protein", "protein"],
-    [".obrok-ugljeni", "ugljeni"],
-    [".obrok-masti", "masti"]
-  ];
-  polja.forEach(function (par) {
-    var el = kontejner.querySelector(par[0]);
-    if (el) el.addEventListener("input", function () { d[par[1]] = this.value; });
+  const veze = [[".obrok-opis-polje", "opis"]]
+    .concat(OBROK_POLJA.map(([, kljuc, klasa]) => ["." + klasa, kljuc]));
+  veze.forEach(([selektor, kljuc]) => {
+    const polje = kontejner.querySelector(selektor);
+    if (polje) polje.addEventListener("input", (e) => { d[kljuc] = e.currentTarget.value; });
   });
 
-  poveziKlik(kontejner, ".obrok-dodaj", function () {
-    var opis = d.opis.trim();
+  poveziKlik(kontejner, ".obrok-dodaj", () => {
+    const opis = d.opis.trim();
     if (opis === "") {
       alert("Upiši šta si jeo.");
       return;
     }
-    var kcal = brojIzPolja(d.kcal);
-    var protein = brojIzPolja(d.protein);
-    var ugljeni = brojIzPolja(d.ugljeni);
-    var masti = brojIzPolja(d.masti);
+    const kcal = brojIzPolja(d.kcal);
+    const protein = brojIzPolja(d.protein);
+    const ugljeni = brojIzPolja(d.ugljeni);
+    const masti = brojIzPolja(d.masti);
     if (kcal === null || protein === null || ugljeni === null || masti === null) {
       alert("Kalorije, proteini, ugljeni hidrati i masti moraju biti brojevi (0 ili više).");
       return;
@@ -460,9 +439,8 @@ function poveziObroke(kontejner) {
     renderKilaza();
   });
 
-  poveziKlik(kontejner, ".obrok-obrisi", function () {
-    var red = this.closest(".obrok-red");
-    obrisiObrok(danasKey(), red.dataset.id);
+  poveziKlik(kontejner, ".obrok-obrisi", (e) => {
+    obrisiObrok(danasKey(), e.currentTarget.closest(".obrok-red").dataset.id);
     renderKilaza();
   });
 }
@@ -470,38 +448,24 @@ function poveziObroke(kontejner) {
 /* ===================== RENDER: KILAŽA ===================== */
 
 // Prolazni tajmer za "Sačuvano ✓" poruku posle upisa kilaže.
-var kilazaTajmer = null;
-
-// Kilaža → "72,4" (srpski decimalni zapis).
-function formatKg(v) {
-  return v.toFixed(1).replace(".", ",");
-}
-
-// "2026-07-04" → "4. jul" (za oznake na grafiku i naslov stepera).
-function kratakDatum(kljuc) {
-  var d = datumIzKljuca(kljuc);
-  return d.getDate() + ". " + MESECI[d.getMonth()];
-}
+let kilazaTajmer = null;
 
 // Svi unosi kilaže kao niz [{datum, kg}], rastuće po datumu.
 function kilazaNiz() {
-  var k = ucitajKilazu();
-  return Object.keys(k.unosi).sort().map(function (d) {
-    return { datum: d, kg: k.unosi[d] };
-  });
+  const k = ucitajKilazu();
+  return Object.keys(k.unosi).sort().map((d) => ({ datum: d, kg: k.unosi[d] }));
 }
 
 // Unosi vidljivi u datom opsegu (7d / 30d / sve), po kalendarskom prozoru.
 function kilazaVidljivi(opseg, svi) {
   if (opseg === "sve") return svi;
-  var dana = opseg === "7d" ? 7 : 30;
-  var granica = pomeriDatum(danasKey(), -(dana - 1));
-  return svi.filter(function (u) { return u.datum >= granica; });
+  const granica = pomeriDatum(danasKey(), -((opseg === "7d" ? 7 : 30) - 1));
+  return svi.filter((u) => u.datum >= granica);
 }
 
 // Upisuje kilažu za dati dan (jedan unos po danu; ponovni upis je izmena).
 function upisiKilazu(datum, kg) {
-  var k = ucitajKilazu();
+  const k = ucitajKilazu();
   k.unosi[datum] = kg;
   sacuvajKilazu(k);
 }
@@ -509,85 +473,78 @@ function upisiKilazu(datum, kg) {
 // Postavlja (ili uklanja, kg = null) ciljnu kilažu. baza = trenutna težina u
 // trenutku postavljanja (određuje smer: mršavljenje ili gojenje).
 function postaviCiljKilaze(kg, baza) {
-  var k = ucitajKilazu();
+  const k = ucitajKilazu();
   k.cilj = kg;
   k.ciljBaza = kg === null ? null : baza;
   sacuvajKilazu(k);
 }
 
 // Zaokruži na 0,1 kg i ograniči na razuman opseg.
-function clampKilaza(v) {
-  return Math.round(Math.min(300, Math.max(30, v)) * 10) / 10;
-}
+const clampKilaza = (v) => Math.round(Math.min(300, Math.max(30, v)) * 10) / 10;
 
 // Dugme opsega grafika (7d/30d/sve) sa oznakom aktivnog.
-function opsegDugme(o) {
-  return '<button data-opseg="' + o + '"' + (stanje.kilazaOpseg === o ? ' class="on"' : "") +
-    ">" + o + "</button>";
-}
+const opsegDugme = (o) =>
+  `<button data-opseg="${o}"${stanje.kilazaOpseg === o ? ' class="on"' : ""}>${o}</button>`;
 
 // Crta SVG grafik kilaže iz vidljivih unosa: površina + linija težine,
 // tanka isprekidana linija 7-dnevnog proseka, ciljna linija i poslednja tačka.
 function buildKilazaChart(vidljivi, cilj) {
-  var W = 340, H = 172, L = 16, RG = 328, T = 18, B = 148;
-  var n = vidljivi.length;
-  var vr = vidljivi.map(function (u) { return u.kg; });
+  const W = 340, H = 172, L = 16, RG = 328, T = 18, B = 148;
+  const n = vidljivi.length;
+  const vr = vidljivi.map((u) => u.kg);
 
-  var minV = Math.min.apply(null, vr);
-  var maxV = Math.max.apply(null, vr);
-  var dmin = (cilj !== null ? Math.min(minV, cilj) : minV) - 0.3;
-  var dmax = (cilj !== null ? Math.max(maxV, cilj) : maxV) + 0.3;
+  const minV = Math.min(...vr);
+  const maxV = Math.max(...vr);
+  const dmin = (cilj !== null ? Math.min(minV, cilj) : minV) - 0.3;
+  const dmax = (cilj !== null ? Math.max(maxV, cilj) : maxV) + 0.3;
 
-  function x(i) { return L + (RG - L) * (n === 1 ? 0.5 : i / (n - 1)); }
-  function y(v) { return B - (B - T) * ((v - dmin) / (dmax - dmin)); }
+  const x = (i) => L + (RG - L) * (n === 1 ? 0.5 : i / (n - 1));
+  const y = (v) => B - (B - T) * ((v - dmin) / (dmax - dmin));
+  const tacka = (v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`;
 
   // 7-dnevni klizni prosek (prozor po indeksu vidljivog niza).
-  var prosek = vr.map(function (_, i) {
-    var w = vr.slice(Math.max(0, i - 6), i + 1);
-    return w.reduce(function (a, b) { return a + b; }, 0) / w.length;
+  const prosek = vr.map((_, i) => {
+    const w = vr.slice(Math.max(0, i - 6), i + 1);
+    return w.reduce((a, b) => a + b, 0) / w.length;
   });
 
-  var linija = vr.map(function (v, i) { return x(i).toFixed(1) + "," + y(v).toFixed(1); }).join(" ");
-  var prosekLin = prosek.map(function (v, i) { return x(i).toFixed(1) + "," + y(v).toFixed(1); }).join(" ");
-  var povrsina = "M " + x(0).toFixed(1) + "," + B + " L " +
-    vr.map(function (v, i) { return x(i).toFixed(1) + "," + y(v).toFixed(1); }).join(" L ") +
-    " L " + x(n - 1).toFixed(1) + "," + B + " Z";
+  const povrsina = `M ${x(0).toFixed(1)},${B} L ${vr.map(tacka).join(" L ")} L ${x(n - 1).toFixed(1)},${B} Z`;
 
-  var svg = '<svg class="kilaza-grafik" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Grafik kilaže">';
-  for (var k = 0; k < 4; k++) {
-    var yy = T + (B - T) * k / 3;
-    var val = dmax - (dmax - dmin) * k / 3;
-    svg += '<line class="kg-grid" x1="' + L + '" y1="' + yy.toFixed(1) + '" x2="' + RG + '" y2="' + yy.toFixed(1) + '"></line>';
-    svg += '<text class="kg-yl" x="0" y="' + (yy + 3).toFixed(1) + '">' + formatKg(val) + "</text>";
+  let svg = `<svg class="kilaza-grafik" viewBox="0 0 ${W} ${H}" role="img" aria-label="Grafik kilaže">`;
+  for (let k = 0; k < 4; k++) {
+    const yy = T + (B - T) * k / 3;
+    const val = dmax - (dmax - dmin) * k / 3;
+    svg += `<line class="kg-grid" x1="${L}" y1="${yy.toFixed(1)}" x2="${RG}" y2="${yy.toFixed(1)}"></line>`;
+    svg += `<text class="kg-yl" x="0" y="${(yy + 3).toFixed(1)}">${formatKg(val)}</text>`;
   }
-  svg += '<path d="' + povrsina + '" fill="#232f4b" fill-opacity="0.08"></path>';
-  svg += '<polyline class="kg-prosek" points="' + prosekLin + '"></polyline>';
+  svg += `<path d="${povrsina}" fill="#232f4b" fill-opacity="0.08"></path>`;
+  svg += `<polyline class="kg-prosek" points="${prosek.map(tacka).join(" ")}"></polyline>`;
   if (cilj !== null) {
-    var gy = y(cilj);
-    svg += '<line class="kg-cilj" x1="' + L + '" y1="' + gy.toFixed(1) + '" x2="' + (RG - 44) + '" y2="' + gy.toFixed(1) + '"></line>';
-    svg += '<text class="kg-cilj-l" x="' + RG + '" y="' + (gy + 3).toFixed(1) + '" text-anchor="end">cilj ' + formatKg(cilj) + "</text>";
+    const gy = y(cilj);
+    svg += `<line class="kg-cilj" x1="${L}" y1="${gy.toFixed(1)}" x2="${RG - 44}" y2="${gy.toFixed(1)}"></line>`;
+    svg += `<text class="kg-cilj-l" x="${RG}" y="${(gy + 3).toFixed(1)}" text-anchor="end">cilj ${formatKg(cilj)}</text>`;
   }
-  svg += '<polyline class="kg-linija" points="' + linija + '"></polyline>';
-  svg += '<circle class="kg-tacka" cx="' + x(n - 1).toFixed(1) + '" cy="' + y(vr[n - 1]).toFixed(1) + '" r="4"></circle>';
+  svg += `<polyline class="kg-linija" points="${vr.map(tacka).join(" ")}"></polyline>`;
+  svg += `<circle class="kg-tacka" cx="${x(n - 1).toFixed(1)}" cy="${y(vr[n - 1]).toFixed(1)}" r="4"></circle>`;
 
-  var idxs = [0, Math.floor((n - 1) / 2), n - 1];
-  var anchors = ["start", "middle", "end"];
-  for (var m = 0; m < 3; m++) {
-    svg += '<text class="kg-xl" x="' + x(idxs[m]).toFixed(1) + '" y="167" text-anchor="' + anchors[m] + '">' +
-      kratakDatum(vidljivi[idxs[m]].datum) + "</text>";
-  }
-  svg += "</svg>";
-  return svg;
+  const anchors = ["start", "middle", "end"];
+  [0, Math.floor((n - 1) / 2), n - 1].forEach((idx, m) => {
+    svg += `<text class="kg-xl" x="${x(idx).toFixed(1)}" y="167" text-anchor="${anchors[m]}">` +
+      `${kratakDatum(vidljivi[idx].datum)}</text>`;
+  });
+  return svg + "</svg>";
 }
 
 // Ceo Kilaža ekran: zaglavlje sa težinom i opsegom, cilj-traka, grafik,
 // statistika i stepper za unos današnje kilaže. Prazna i "jedan unos" stanja
-// su posebno obrađena.
+// su posebno obrađena. Pun re-render se radi samo kad se menja ono što utiče
+// na grafik/statistiku (opseg, upis kilaže, cilj, obroci) — stepper i kucanje
+// idu kroz osveziKilazaUnos.
 function renderKilaza() {
-  var kontejner = document.getElementById("kilaza-sadrzaj");
-  var kilaza = ucitajKilazu();
-  var cilj = kilaza.cilj;
-  var svi = kilazaNiz();
+  const kontejner = el("kilaza-sadrzaj");
+  const kilaza = ucitajKilazu();
+  const cilj = kilaza.cilj;
+  const svi = kilazaNiz();
 
   // Inicijalizuj stepper: današnji unos → poslednji → 70,0 kg.
   if (stanje.kilazaDraft === null) {
@@ -596,24 +553,22 @@ function renderKilaza() {
     else stanje.kilazaDraft = 70.0;
   }
 
-  var vidljivi = kilazaVidljivi(stanje.kilazaOpseg, svi);
+  let vidljivi = kilazaVidljivi(stanje.kilazaOpseg, svi);
   if (vidljivi.length < 2 && svi.length >= 2) vidljivi = svi; // izbegni grafik sa jednom tačkom
-  var poslednja = svi.length ? svi[svi.length - 1].kg : stanje.kilazaDraft;
-
-  var html = "";
+  const poslednja = svi.length ? svi[svi.length - 1].kg : stanje.kilazaDraft;
 
   // ---- Zaglavlje: težina + delta + prekidač opsega ----
-  html += '<header class="ekran-zaglavlje kilaza-zaglavlje"><div>' +
+  let html = '<header class="ekran-zaglavlje kilaza-zaglavlje"><div>' +
     '<p class="nadnaslov">KILAŽA</p>' +
-    '<div class="kilaza-veliko"><b>' + formatKg(poslednja) + "</b><em>kg</em></div>";
+    `<div class="kilaza-veliko"><b>${formatKg(poslednja)}</b><em>kg</em></div>`;
   if (vidljivi.length >= 2) {
-    var delta = poslednja - vidljivi[0].kg;
-    html += '<p class="kilaza-delta ' + (delta <= 0 ? "dole" : "gore") + '">' +
-      (delta <= 0 ? "▼ " : "▲ ") + formatKg(Math.abs(delta)) + " kg za " + vidljivi.length + " dana</p>";
+    const delta = poslednja - vidljivi[0].kg;
+    html += `<p class="kilaza-delta ${delta <= 0 ? "dole" : "gore"}">` +
+      `${delta <= 0 ? "▼ " : "▲ "}${formatKg(Math.abs(delta))} kg za ${vidljivi.length} dana</p>`;
   }
   html += "</div>";
   if (svi.length >= 2) {
-    html += '<div class="kilaza-opseg">' + opsegDugme("7d") + opsegDugme("30d") + opsegDugme("sve") + "</div>";
+    html += `<div class="kilaza-opseg">${opsegDugme("7d")}${opsegDugme("30d")}${opsegDugme("sve")}</div>`;
   }
   html += "</header>";
 
@@ -622,21 +577,21 @@ function renderKilaza() {
     if (cilj !== null) {
       // Bazna težina (kad je cilj postavljen) određuje smer. Za stare ciljeve
       // bez zabeležene baze, uzmi prvi unos kao razuman početak.
-      var baza = kilaza.ciljBaza;
+      let baza = kilaza.ciljBaza;
       if (baza === null || baza === undefined) baza = svi.length ? svi[0].kg : poslednja;
 
-      var smerNanize = cilj < baza; // cilj ispod baze = mršavljenje, iznad = gojenje
-      var postignuto = smerNanize ? (poslednja <= cilj + 0.0001) : (poslednja >= cilj - 0.0001);
-      var preostalo = Math.abs(poslednja - cilj);
-      var pct = cilj === baza
+      const smerNanize = cilj < baza; // cilj ispod baze = mršavljenje, iznad = gojenje
+      const postignuto = smerNanize ? (poslednja <= cilj + 0.0001) : (poslednja >= cilj - 0.0001);
+      const preostalo = Math.abs(poslednja - cilj);
+      const pct = cilj === baza
         ? (postignuto ? 100 : 0)
         : Math.max(0, Math.min(100, ((poslednja - baza) / (cilj - baza)) * 100));
 
       html += '<button class="kilaza-cilj-red" title="Promeni cilj">' +
-        '<span class="kilaza-cilj-oznaka">CILJ ' + formatKg(cilj) + " kg</span>" +
-        '<span class="kilaza-cilj-traka"><span style="width:' + pct.toFixed(0) + '%"></span></span>' +
+        `<span class="kilaza-cilj-oznaka">CILJ ${formatKg(cilj)} kg</span>` +
+        `<span class="kilaza-cilj-traka"><span style="width:${pct.toFixed(0)}%"></span></span>` +
         '<span class="kilaza-cilj-preostalo">' +
-          (postignuto ? "cilj postignut" : "još " + formatKg(preostalo) + " kg") +
+          (postignuto ? "cilj postignut" : `još ${formatKg(preostalo)} kg`) +
         "</span>" +
       "</button>";
     } else {
@@ -657,29 +612,26 @@ function renderKilaza() {
 
   // ---- Statistika ----
   if (svi.length >= 1) {
-    var sveKg = svi.map(function (u) { return u.kg; });
-    var minSvi = Math.min.apply(null, sveKg);
-    var prosek = vidljivi.reduce(function (a, u) { return a + u.kg; }, 0) / vidljivi.length;
-    var prosekLabel = "prosek " + stanje.kilazaOpseg;
+    const minSvi = Math.min(...svi.map((u) => u.kg));
+    const prosek = vidljivi.reduce((a, u) => a + u.kg, 0) / vidljivi.length;
     html += '<div class="kilaza-stat-red">' +
-      '<div class="kilaza-stat tamna"><b>' + formatKg(poslednja) + '<small> kg</small></b><small>trenutna</small></div>' +
-      '<div class="kilaza-stat"><b>' + formatKg(prosek) + "</b><small>" + prosekLabel + "</small></div>" +
-      '<div class="kilaza-stat"><b>' + formatKg(minSvi) + "</b><small>najniža</small></div>" +
+      `<div class="kilaza-stat tamna"><b>${formatKg(poslednja)}<small> kg</small></b><small>trenutna</small></div>` +
+      `<div class="kilaza-stat"><b>${formatKg(prosek)}</b><small>prosek ${stanje.kilazaOpseg}</small></div>` +
+      `<div class="kilaza-stat"><b>${formatKg(minSvi)}</b><small>najniža</small></div>` +
     "</div>";
   }
 
   // ---- Stepper: unos današnje kilaže ----
-  var danasImaUnos = kilaza.unosi[danasKey()] !== undefined;
   html += '<div class="kilaza-step-wrap">' +
-    '<p class="cap">DANAŠNJA KILAŽA · ' + kratakDatum(danasKey()).toUpperCase() + "</p>" +
+    `<p class="cap">DANAŠNJA KILAŽA · ${kratakDatum(danasKey()).toUpperCase()}</p>` +
     '<div class="kilaza-stepper">' +
       '<button class="kilaza-korak" data-korak="-1">−</button>' +
       '<span class="val"><input class="kilaza-vrednost" type="text" inputmode="decimal" ' +
-        'value="' + formatKg(stanje.kilazaDraft) + '" aria-label="Kilaža u kg"><small>kg</small></span>' +
+        `value="${formatKg(stanje.kilazaDraft)}" aria-label="Kilaža u kg"><small>kg</small></span>` +
       '<button class="kilaza-korak" data-korak="1">+</button>' +
     "</div>" +
-    '<button class="kilaza-sacuvaj"' + (stanje.kilazaSacuvano ? ' style="background:#3d8f6f"' : "") + ">" +
-      (stanje.kilazaSacuvano ? "Sačuvano ✓" : (danasImaUnos ? "Ažuriraj za danas" : "Sačuvaj za danas")) +
+    `<button class="kilaza-sacuvaj"${stanje.kilazaSacuvano ? ' style="background:#3d8f6f"' : ""}>` +
+      tekstDugmetaCuvanja(kilaza) +
     "</button>" +
   "</div>";
 
@@ -689,92 +641,116 @@ function renderKilaza() {
   kontejner.innerHTML = html;
 
   // ---- Interakcije ----
-  poveziKlik(kontejner, ".kilaza-opseg button", function () {
-    stanje.kilazaOpseg = this.dataset.opseg;
+  // Pun re-render samo tamo gde se menja grafik/statistika: opseg i upis kilaže
+  // (cilj ide kroz klikKilazaCilj). Stepper, kucanje i skrol diraju samo unos.
+  poveziKlik(kontejner, ".kilaza-opseg button", (e) => {
+    stanje.kilazaOpseg = e.currentTarget.dataset.opseg;
     renderKilaza();
   });
-  poveziKlik(kontejner, ".kilaza-korak", function () {
-    stanje.kilazaDraft = clampKilaza(stanje.kilazaDraft + Number(this.dataset.korak) * 0.1);
-    stanje.kilazaSacuvano = false;
-    renderKilaza();
+  poveziKlik(kontejner, ".kilaza-korak", (e) => {
+    promeniKilazaDraft(stanje.kilazaDraft + Number(e.currentTarget.dataset.korak) * 0.1);
   });
-  poveziKlik(kontejner, ".kilaza-sacuvaj", function () {
+  poveziKlik(kontejner, ".kilaza-sacuvaj", () => {
     stanje.kilazaDraft = clampKilaza(stanje.kilazaDraft);
     upisiKilazu(danasKey(), stanje.kilazaDraft);
     stanje.kilazaSacuvano = true;
     renderKilaza();
     clearTimeout(kilazaTajmer);
-    kilazaTajmer = setTimeout(function () {
+    kilazaTajmer = setTimeout(() => {
       stanje.kilazaSacuvano = false;
-      if (stanje.sekcija === "kilaza") renderKilaza();
+      // Istekla je samo poruka na dugmetu — nema potrebe ponovo crtati grafik.
+      if (stanje.sekcija === "kilaza") osveziKilazaUnos();
     }, 1600);
   });
 
   // Polje kilaže: klik + kucanje, Enter/blur potvrđuje, skrol menja za 0,1 kg.
-  var polje = kontejner.querySelector(".kilaza-vrednost");
+  const polje = kontejner.querySelector(".kilaza-vrednost");
   if (polje) {
-    polje.addEventListener("focus", function () { this.select(); });
-    polje.addEventListener("input", function () {
-      var v = parseFloat(this.value.replace(",", "."));
+    polje.addEventListener("focus", (e) => e.currentTarget.select());
+    polje.addEventListener("input", (e) => {
+      const v = parseFloat(e.currentTarget.value.replace(",", "."));
       if (!isNaN(v)) {
-        stanje.kilazaDraft = v;
+        stanje.kilazaDraft = v;   // bez zaokruživanja dok korisnik kuca
         stanje.kilazaSacuvano = false;
-        ponistiOznakuCuvanja(kontejner, danasImaUnos);
+        osveziKilazaUnos();       // polje ne diramo — u njemu je kursor
       }
     });
-    polje.addEventListener("change", function () {
-      stanje.kilazaDraft = clampKilaza(stanje.kilazaDraft);
-      stanje.kilazaSacuvano = false;
-      renderKilaza();
+    polje.addEventListener("change", () => promeniKilazaDraft(stanje.kilazaDraft));
+    polje.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") e.currentTarget.blur();
     });
-    polje.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") this.blur();
-    });
-    polje.addEventListener("wheel", function (e) {
+    polje.addEventListener("wheel", (e) => {
       e.preventDefault();
-      stanje.kilazaDraft = clampKilaza(stanje.kilazaDraft + (e.deltaY < 0 ? 0.1 : -0.1));
-      stanje.kilazaSacuvano = false;
-      this.value = formatKg(stanje.kilazaDraft);
-      ponistiOznakuCuvanja(kontejner, danasImaUnos);
+      promeniKilazaDraft(stanje.kilazaDraft + (e.deltaY < 0 ? 0.1 : -0.1));
     }, { passive: false });
   }
 
-  var ciljEl = kontejner.querySelector(".kilaza-cilj-red, .kilaza-cilj-postavi");
+  const ciljEl = kontejner.querySelector(".kilaza-cilj-red, .kilaza-cilj-postavi");
   if (ciljEl) ciljEl.addEventListener("click", klikKilazaCilj);
 
   poveziObroke(kontejner);
 }
 
-// Ako je dugme još u stanju "Sačuvano ✓", vrati ga u normalno (kad se draft
-// promeni skrolom/kucanjem bez punog re-rendera).
-function ponistiOznakuCuvanja(kontejner, danasImaUnos) {
-  var b = kontejner.querySelector(".kilaza-sacuvaj");
-  if (b && b.textContent.indexOf("Sačuvano") !== -1) {
-    b.textContent = danasImaUnos ? "Ažuriraj za danas" : "Sačuvaj za danas";
-    b.removeAttribute("style");
+// Natpis na dugmetu za čuvanje: prolazna potvrda, pa "Ažuriraj"/"Sačuvaj".
+const tekstDugmetaCuvanja = (kilaza) =>
+  stanje.kilazaSacuvano
+    ? "Sačuvano ✓"
+    : (kilaza.unosi[danasKey()] !== undefined ? "Ažuriraj za danas" : "Sačuvaj za danas");
+
+// Menja vrednost stepera (uz zaokruživanje) i osvežava samo unos.
+function promeniKilazaDraft(v) {
+  stanje.kilazaDraft = clampKilaza(v);
+  stanje.kilazaSacuvano = false;
+  osveziKilazaUnos(true);
+}
+
+// Ciljani re-render: osvežava samo polje sa kilažom, dugme za čuvanje i —
+// dok nema nijednog sačuvanog unosa — veliki broj u zaglavlju. To su jedini
+// delovi ekrana koji zavise od drafta; grafik, statistika i obroci (sa svojim
+// draftom) ostaju netaknuti. azurirajPolje = false dok korisnik kuca u polju.
+function osveziKilazaUnos(azurirajPolje) {
+  const kontejner = el("kilaza-sadrzaj");
+  if (!kontejner) return;
+  const kilaza = ucitajKilazu();
+
+  if (azurirajPolje) {
+    const polje = kontejner.querySelector(".kilaza-vrednost");
+    if (polje) polje.value = formatKg(stanje.kilazaDraft);
+  }
+
+  const dugme = kontejner.querySelector(".kilaza-sacuvaj");
+  if (dugme) {
+    dugme.textContent = tekstDugmetaCuvanja(kilaza);
+    if (stanje.kilazaSacuvano) dugme.style.background = "#3d8f6f";
+    else dugme.removeAttribute("style");
+  }
+
+  // Bez ijednog sačuvanog unosa veliki broj u zaglavlju prikazuje draft.
+  if (Object.keys(kilaza.unosi).length === 0) {
+    const veliko = kontejner.querySelector(".kilaza-veliko b");
+    if (veliko) veliko.textContent = formatKg(stanje.kilazaDraft);
   }
 }
 
 // Postavljanje/menjanje ciljne kilaže (prompt; prazan unos uklanja cilj).
 function klikKilazaCilj() {
-  var k = ucitajKilazu();
-  var unos = prompt("Ciljna kilaža (kg):", k.cilj !== null ? formatKg(k.cilj) : "");
-  if (unos === null) return;
-  unos = unos.trim().replace(",", ".");
+  const k = ucitajKilazu();
+  const odgovor = prompt("Ciljna kilaža (kg):", k.cilj !== null ? formatKg(k.cilj) : "");
+  if (odgovor === null) return;
+  const unos = odgovor.trim().replace(",", ".");
   if (unos === "") {
     postaviCiljKilaze(null);
     renderKilaza();
     return;
   }
-  var v = parseFloat(unos);
+  const v = parseFloat(unos);
   if (isNaN(v) || v < 30 || v > 300) {
     alert("Unesi broj između 30 i 300 kg.");
     return;
   }
   // Bazna težina = poslednji unos (ili trenutna vrednost stepera ako još nema unosa).
-  var svi = kilazaNiz();
-  var baza = svi.length ? svi[svi.length - 1].kg : stanje.kilazaDraft;
-  postaviCiljKilaze(Math.round(v * 10) / 10, baza);
+  const svi = kilazaNiz();
+  postaviCiljKilaze(Math.round(v * 10) / 10, svi.length ? svi[svi.length - 1].kg : stanje.kilazaDraft);
   renderKilaza();
 }
 
@@ -782,7 +758,7 @@ function klikKilazaCilj() {
 
 // Dodaje trening u dan (naziv + termin + slobodne linije + težina + beleška).
 function dodajTrening(datum, t) {
-  var dan = ucitajDan(datum);
+  const dan = ucitajDan(datum);
   if (!dan.treninzi) dan.treninzi = [];
   dan.treninzi.push({
     id: noviId(),
@@ -794,26 +770,26 @@ function dodajTrening(datum, t) {
 
 // Briše trening iz dana.
 function obrisiTrening(datum, id) {
-  var dan = ucitajDan(datum);
-  dan.treninzi = (dan.treninzi || []).filter(function (x) { return x.id !== id; });
+  const dan = ucitajDan(datum);
+  dan.treninzi = (dan.treninzi || []).filter((x) => x.id !== id);
   sacuvajDan(datum, dan);
 }
 
 // Nalazi trening po id-u; vraća null ako ne postoji.
-function nadjiTrening(datum, id) {
-  var lista = ucitajDan(datum).treninzi || [];
-  for (var i = 0; i < lista.length; i++) {
-    if (lista[i].id === id) return lista[i];
-  }
-  return null;
-}
+const nadjiTrening = (datum, id) =>
+  (ucitajDan(datum).treninzi || []).find((t) => t.id === id) || null;
+
+// Prolazni tajmer za potvrdu "Sačuvano ✓" na dugmetu forme za trening.
+let treningPotvrdaTajmer = null;
+
+// Polja forme za trening — čiste se zajedno posle uspešnog upisa.
+const TRENING_POLJA = ["trening-naziv", "trening-od", "trening-do", "trening-linije", "trening-beleska"];
 
 // Dodavanje treninga iz forme. Trening se uvek beleži za DANAŠNJI datum.
 function dodajTreningKlik() {
-  var datum = danasKey();
-  var naziv = document.getElementById("trening-naziv").value.trim();
-  var od = document.getElementById("trening-od").value;
-  var doVreme = document.getElementById("trening-do").value;
+  const naziv = el("trening-naziv").value.trim();
+  const od = el("trening-od").value;
+  const doVreme = el("trening-do").value;
 
   if (naziv === "") { alert("Upiši naziv treninga."); return; }
   if (od === "" || doVreme === "") { alert("Upiši termin (od i do)."); return; }
@@ -822,73 +798,66 @@ function dodajTreningKlik() {
     return;
   }
 
-  dodajTrening(datum, {
+  dodajTrening(danasKey(), {
     naziv: naziv,
     od: od,
     do: doVreme,
-    linije: document.getElementById("trening-linije").value,
+    linije: el("trening-linije").value,
     tezina: stanje.treningTezina,
-    beleska: document.getElementById("trening-beleska").value.trim()
+    beleska: el("trening-beleska").value.trim()
   });
 
-  document.getElementById("trening-naziv").value = "";
-  document.getElementById("trening-od").value = "";
-  document.getElementById("trening-do").value = "";
-  document.getElementById("trening-linije").value = "";
-  document.getElementById("trening-beleska").value = "";
+  TRENING_POLJA.forEach((id) => { el(id).value = ""; });
   stanje.treningTezina = 3;
   renderTreninzi();
 
   // Kratka potvrda na dugmetu (nema više liste ispod da to pokaže).
-  var dugme = document.getElementById("trening-dodaj");
+  const dugme = el("trening-dodaj");
   if (dugme) {
     dugme.textContent = "Sačuvano ✓ — vidi u Istoriji";
     dugme.style.background = "#3d8f6f";
     clearTimeout(treningPotvrdaTajmer);
-    treningPotvrdaTajmer = setTimeout(function () {
+    treningPotvrdaTajmer = setTimeout(() => {
       dugme.textContent = "Sačuvaj trening";
       dugme.style.removeProperty("background");
     }, 1800);
   }
 }
 
-var treningPotvrdaTajmer = null;
-
 /* ===================== ISTORIJA: POMOĆNE ===================== */
 
 // Ima li dan bar jedan trening?
-function danImaTrening(datum) {
-  return (ucitajDan(datum).treninzi || []).length > 0;
-}
+const danImaTrening = (datum) => (ucitajDan(datum).treninzi || []).length > 0;
 
 // Ima li dan bilo kakav unos (trening ili obrok)? Određuje da li se dan
-// oboji na kalendaru i da li se može otvoriti Detalj.
+// oboji na kalendaru i da li se može otvoriti Detalj. Jedno čitanje dana.
 function danImaPodatke(datum) {
-  return danImaTrening(datum) || danImaObroke(datum);
+  const dan = ucitajDan(datum);
+  return (dan.treninzi || []).length > 0 || (dan.obroci || []).length > 0;
+}
+
+// Prolazi kroz sve dane meseca i zove fn sa datum-ključem i brojem dana.
+function zaSvakiDanMeseca(godina, mesec, fn) {
+  const brojDana = new Date(godina, mesec + 1, 0).getDate();
+  for (let dan = 1; dan <= brojDana; dan++) fn(dateKey(new Date(godina, mesec, dan)), dan);
 }
 
 // Ukupan broj treninga u datom mesecu.
 function treninziUMesecu(godina, mesec) {
-  var broj = 0;
-  var brojDana = new Date(godina, mesec + 1, 0).getDate();
-  for (var dan = 1; dan <= brojDana; dan++) {
-    var kljuc = dateKey(new Date(godina, mesec, dan));
-    broj += (ucitajDan(kljuc).treninzi || []).length;
-  }
+  let broj = 0;
+  zaSvakiDanMeseca(godina, mesec, (kljuc) => { broj += (ucitajDan(kljuc).treninzi || []).length; });
   return broj;
 }
 
 // Prosečan dnevni unos kalorija u mesecu (samo dani sa obrocima). null ako nema.
 function prosekKcalMeseca(godina, mesec) {
-  var brojDana = new Date(godina, mesec + 1, 0).getDate();
-  var zbir = 0, dana = 0;
-  for (var dan = 1; dan <= brojDana; dan++) {
-    var kljuc = dateKey(new Date(godina, mesec, dan));
+  let zbir = 0, dana = 0;
+  zaSvakiDanMeseca(godina, mesec, (kljuc) => {
     if (danImaObroke(kljuc)) {
       zbir += zbirObroka(kljuc).kcal;
       dana++;
     }
-  }
+  });
   return dana === 0 ? null : Math.round(zbir / dana);
 }
 
@@ -897,21 +866,21 @@ function prosekKcalMeseca(godina, mesec) {
 // Pregled meseca: sažetak (treninzi + prosek kcal), kalendar obojen po unosu
 // i lista poslednjih dana. Tap na dan otvara Detalj dana.
 function renderIstorija() {
-  var danas = new Date();
-  var prikaz = new Date(danas.getFullYear(), danas.getMonth() + stanje.mesecOffset, 1);
-  var godina = prikaz.getFullYear();
-  var mesec = prikaz.getMonth();
+  const danas = new Date();
+  const prikaz = new Date(danas.getFullYear(), danas.getMonth() + stanje.mesecOffset, 1);
+  const godina = prikaz.getFullYear();
+  const mesec = prikaz.getMonth();
 
-  document.getElementById("istorija-mesec").textContent =
+  el("istorija-mesec").textContent =
     MESECI[mesec].charAt(0).toUpperCase() + MESECI[mesec].slice(1) +
     (godina !== danas.getFullYear() ? " " + godina : "");
 
-  document.getElementById("istorija-treninzi").textContent = treninziUMesecu(godina, mesec);
-  var pros = prosekKcalMeseca(godina, mesec);
-  document.getElementById("istorija-kcal").textContent = pros === null ? "—" : formatKcal(pros);
+  el("istorija-treninzi").textContent = treninziUMesecu(godina, mesec);
+  const pros = prosekKcalMeseca(godina, mesec);
+  el("istorija-kcal").textContent = pros === null ? "—" : formatKcal(pros);
 
   // Nema budućih meseci (nema podataka unapred).
-  var napred = document.getElementById("mesec-napred");
+  const napred = el("mesec-napred");
   if (napred) napred.disabled = stanje.mesecOffset >= 0;
 
   renderKalendar(godina, mesec);
@@ -921,61 +890,59 @@ function renderIstorija() {
 // Mini kalendar meseca (Pon–Ned). Boja dana: pun = trening, polovina = samo
 // obroci, isprekidan = bez unosa. Tap na dan sa unosom otvara Detalj.
 function renderKalendar(godina, mesec) {
-  var kontejner = document.getElementById("istorija-kalendar");
-  var danasKljuc = danasKey();
-  var brojDana = new Date(godina, mesec + 1, 0).getDate();
+  const kontejner = el("istorija-kalendar");
+  const danasKljuc = danasKey();
 
   // getDay() vraća 0 za nedelju; nama treba ponedeljak = kolona 0.
-  var prviDan = new Date(godina, mesec, 1).getDay();
-  var pomak = (prviDan + 6) % 7;
+  const pomak = (new Date(godina, mesec, 1).getDay() + 6) % 7;
 
-  var html = "";
-  var slova = ["P", "U", "S", "Č", "P", "S", "N"];
-  for (var z = 0; z < 7; z++) html += '<span class="kal-zaglavlje">' + slova[z] + "</span>";
-  for (var p = 0; p < pomak; p++) html += "<span></span>";
-  for (var dan = 1; dan <= brojDana; dan++) {
-    var kljuc = dateKey(new Date(godina, mesec, dan));
-    var klasa;
+  let html = ["P", "U", "S", "Č", "P", "S", "N"]
+    .map((slovo) => `<span class="kal-zaglavlje">${slovo}</span>`).join("");
+  html += "<span></span>".repeat(pomak);
+
+  zaSvakiDanMeseca(godina, mesec, (kljuc, dan) => {
+    let klasa;
     if (kljuc > danasKljuc) klasa = "bez-plana";      // budućnost
     else if (danImaTrening(kljuc)) klasa = "ispunjen";
     else if (danImaObroke(kljuc)) klasa = "delimican";
     else klasa = "bez-plana";
-    var klase = "kal-dan " + klasa + (kljuc === danasKljuc ? " danas" : "");
-    html += '<button class="' + klase + '" data-datum="' + kljuc + '">' + dan + "</button>";
-  }
+    const klase = `kal-dan ${klasa}${kljuc === danasKljuc ? " danas" : ""}`;
+    html += `<button class="${klase}" data-datum="${kljuc}">${dan}</button>`;
+  });
   kontejner.innerHTML = html;
 
-  poveziKlik(kontejner, ".kal-dan", function () {
-    if (danImaPodatke(this.dataset.datum)) otvoriDetalj(this.dataset.datum);
+  poveziKlik(kontejner, ".kal-dan", (e) => {
+    const datum = e.currentTarget.dataset.datum;
+    if (danImaPodatke(datum)) otvoriDetalj(datum);
   });
 }
 
 // Lista poslednjih dana sa unosom (do 60 dana unazad, najnoviji prvo).
 function renderPoslednjeDane() {
-  var kontejner = document.getElementById("istorija-dani");
-  var html = "";
-  var kljuc = danasKey();
+  const kontejner = el("istorija-dani");
+  let html = "";
+  let kljuc = danasKey();
 
-  for (var i = 0; i < 60; i++) {
-    if (danImaPodatke(kljuc)) {
-      var dan = ucitajDan(kljuc);
-      var d = datumIzKljuca(kljuc);
-      var zbir = zbirObroka(kljuc);
-      var brTren = (dan.treninzi || []).length;
+  for (let i = 0; i < 60; i++) {
+    const dan = ucitajDan(kljuc);
+    const brTren = (dan.treninzi || []).length;
 
-      var meta = [];
-      if (zbir.broj) meta.push(zbir.broj + " " + recObroka(zbir.broj));
-      if (brTren) meta.push(brTren + " " + (brTren === 1 ? "trening" : "treninga"));
+    if (brTren || (dan.obroci || []).length) {
+      const d = datumIzKljuca(kljuc);
+      const zbir = zbirObroka(kljuc);
+      const meta = [];
+      if (zbir.broj) meta.push(`${zbir.broj} ${recObroka(zbir.broj)}`);
+      if (brTren) meta.push(`${brTren} ${brTren === 1 ? "trening" : "treninga"}`);
 
       html +=
-        '<button class="dan-red" data-datum="' + kljuc + '">' +
-          '<span class="dan-broj">' + String(d.getDate()).padStart(2, "0") +
-            "<small>" + DANI_KRATKO[d.getDay()] + "</small></span>" +
+        `<button class="dan-red" data-datum="${kljuc}">` +
+          `<span class="dan-broj">${String(d.getDate()).padStart(2, "0")}` +
+            `<small>${DANI_KRATKO[d.getDay()]}</small></span>` +
           '<span class="dan-info">' +
-            "<strong>" + (zbir.broj ? formatKcal(zbir.kcal) + " kcal" : "bez obroka") + "</strong>" +
-            '<span class="dan-meta">' + (meta.length ? meta.join(" · ") : "—") + "</span>" +
+            `<strong>${zbir.broj ? formatKcal(zbir.kcal) + " kcal" : "bez obroka"}</strong>` +
+            `<span class="dan-meta">${meta.length ? meta.join(" · ") : "—"}</span>` +
           "</span>" +
-          (brTren ? '<span class="dan-vreme">' + treningIkonaSvg() + "</span>" : "") +
+          (brTren ? `<span class="dan-vreme">${treningIkonaSvg()}</span>` : "") +
         "</button>";
     }
     kljuc = pomeriDatum(kljuc, -1);
@@ -983,9 +950,7 @@ function renderPoslednjeDane() {
 
   kontejner.innerHTML = html === "" ? '<p class="prazno">Još nema unetih dana.</p>' : html;
 
-  poveziKlik(kontejner, ".dan-red", function () {
-    otvoriDetalj(this.dataset.datum);
-  });
+  poveziKlik(kontejner, ".dan-red", (e) => otvoriDetalj(e.currentTarget.dataset.datum));
 }
 
 /* ===================== RENDER: DETALJ DANA ===================== */
@@ -996,104 +961,92 @@ function otvoriDetalj(datum) {
   prikaziSekciju("detalj");
 }
 
-// Jedan obrok u pregledu (bez dugmeta za brisanje — istorija je samo prikaz).
-function obrokRedPregledHtml(o) {
-  return '<div class="obrok-red">' +
-    '<span class="obrok-info">' +
-      '<span class="obrok-opis">' + escapeHtml(o.opis) + "</span>" +
-      obrokMakroiHtml(o) +
-    "</span>" +
-  "</div>";
-}
-
 // Jedan trening u listi dana (tap otvara puni detalj treninga).
-function treningRedHtml(datum, t) {
-  return '<button type="button" class="trening-red" data-datum="' + datum + '" data-id="' + t.id + '">' +
+const treningRedHtml = (datum, t) =>
+  `<button type="button" class="trening-red" data-datum="${datum}" data-id="${t.id}">` +
     '<span class="trening-tacka"></span>' +
     '<span class="trening-red-info">' +
-      '<span class="trening-red-naziv">' + escapeHtml(t.naziv) + "</span>" +
-      '<span class="trening-red-vreme">' + t.od + "–" + t.do + " · " + formatTrajanje(treningMinuta(t)) + "</span>" +
+      `<span class="trening-red-naziv">${escapeHtml(t.naziv)}</span>` +
+      `<span class="trening-red-vreme">${t.od}–${t.do} · ${formatTrajanje(treningMinuta(t))}</span>` +
     "</span>" +
     tegoviHtml(t.tezina, "teg-mini") +
     '<span class="trening-strelica">›</span>' +
   "</button>";
-}
 
 // Detalj dana: obroci tog dana (sa zbirom kalorija i makroa) + odrađeni treninzi.
 function renderDetalj() {
-  var datum = stanje.detaljDatum;
-  var d = datumIzKljuca(datum);
-  var dan = ucitajDan(datum);
-  var obroci = dan.obroci || [];
-  var treninzi = dan.treninzi || [];
-  var zbir = zbirObroka(datum);
+  const datum = stanje.detaljDatum;
+  const d = datumIzKljuca(datum);
+  const dan = ucitajDan(datum);
+  const obroci = dan.obroci || [];
+  const treninzi = dan.treninzi || [];
+  const zbir = zbirObroka(datum);
 
-  document.getElementById("detalj-dan").textContent = DANI[d.getDay()].toUpperCase();
-  document.getElementById("detalj-datum").textContent = d.getDate() + ". " + MESECI[d.getMonth()];
-  document.getElementById("detalj-ukupno").textContent = formatKcal(zbir.kcal);
-
-  var html = "";
+  el("detalj-dan").textContent = DANI[d.getDay()].toUpperCase();
+  el("detalj-datum").textContent = `${d.getDate()}. ${MESECI[d.getMonth()]}`;
+  el("detalj-ukupno").textContent = formatKcal(zbir.kcal);
 
   // ---- Obroci ----
-  html += '<p class="naslov-sekcije"><span class="obrok-naslov">' + obrokIkonaSvg() +
-    " OBROCI</span><span class=\"desno\">" + zbir.broj + " " + recObroka(zbir.broj) + "</span></p>";
+  let html = `<p class="naslov-sekcije"><span class="obrok-naslov">${obrokIkonaSvg()}` +
+    ` OBROCI</span><span class="desno">${zbir.broj} ${recObroka(zbir.broj)}</span></p>`;
   if (obroci.length) {
     html += zbirObrokaHtml(zbir, "kcal ukupno");
-    html += '<div class="lista obroci-lista">';
-    for (var i = 0; i < obroci.length; i++) html += obrokRedPregledHtml(obroci[i]);
-    html += "</div>";
+    html += obrociListaHtml(obroci, false);
   } else {
     html += '<p class="prazno">Nema unetih obroka za ovaj dan.</p>';
   }
 
   // ---- Treninzi ----
-  html += '<p class="naslov-sekcije"><span class="trening-naslov">' + treningIkonaSvg() +
-    " TRENINZI</span><span class=\"desno\">" + treninzi.length + "</span></p>";
+  html += `<p class="naslov-sekcije"><span class="trening-naslov">${treningIkonaSvg()}` +
+    ` TRENINZI</span><span class="desno">${treninzi.length}</span></p>`;
   if (treninzi.length) {
-    html += '<div class="lista">';
-    for (var j = 0; j < treninzi.length; j++) html += treningRedHtml(datum, treninzi[j]);
-    html += "</div>";
+    html += '<div class="lista">' + treninzi.map((t) => treningRedHtml(datum, t)).join("") + "</div>";
   } else {
     html += '<p class="prazno">Nema treninga za ovaj dan.</p>';
   }
 
-  var kontejner = document.getElementById("detalj-sadrzaj");
+  const kontejner = el("detalj-sadrzaj");
   kontejner.innerHTML = html;
 
-  poveziKlik(kontejner, ".trening-red", function () {
-    otvoriTrening(this.dataset.datum, this.dataset.id, "detalj");
+  poveziKlik(kontejner, ".trening-red", (e) => {
+    const { datum: d2, id } = e.currentTarget.dataset;
+    otvoriTrening(d2, id, "detalj");
   });
 }
 
 /* ===================== INIT ===================== */
 
+// Renderer po sekciji — koristi ga osveziAktivnuSekciju.
+const RENDERI = {
+  kilaza: renderKilaza,
+  treninzi: renderTreninzi,
+  trening: renderTrening,
+  istorija: renderIstorija,
+  detalj: renderDetalj
+};
+
 // Povezuje statične kontrole (nav, forma za trening) i pokreće prvi render.
 function init() {
   // Donja navigacija.
-  var navDugmad = document.querySelectorAll(".nav-dugme");
-  for (var i = 0; i < navDugmad.length; i++) {
-    navDugmad[i].addEventListener("click", function () {
-      prikaziSekciju(this.dataset.sekcija);
-    });
-  }
+  document.querySelectorAll(".nav-dugme").forEach((dugme) => {
+    dugme.addEventListener("click", (e) => prikaziSekciju(e.currentTarget.dataset.sekcija));
+  });
 
   // Trening: dodavanje iz forme.
-  document.getElementById("trening-dodaj").addEventListener("click", dodajTreningKlik);
+  el("trening-dodaj").addEventListener("click", dodajTreningKlik);
 
   // Istorija: prebacivanje meseca (bez budućih meseci).
-  document.getElementById("mesec-nazad").addEventListener("click", function () {
+  el("mesec-nazad").addEventListener("click", () => {
     stanje.mesecOffset--;
     renderIstorija();
   });
-  document.getElementById("mesec-napred").addEventListener("click", function () {
+  el("mesec-napred").addEventListener("click", () => {
     if (stanje.mesecOffset < 0) stanje.mesecOffset++;
     renderIstorija();
   });
 
   // Detalj dana: povratak na Istoriju.
-  document.getElementById("detalj-nazad").addEventListener("click", function () {
-    prikaziSekciju("istorija");
-  });
+  el("detalj-nazad").addEventListener("click", () => prikaziSekciju("istorija"));
 
   prikaziSekciju("kilaza");
 }
@@ -1101,11 +1054,11 @@ function init() {
 // Pokretanje: prvo se podaci učitaju sa servera (Supabase) u memorijski keš,
 // pa tek onda kreće aplikacija. Bez mreže: prikaži poruku umesto praznog ekrana.
 function pokreniAplikaciju() {
-  var ekran = document.getElementById("ucitavanje");
-  ucitajSveIzBaze().then(function () {
+  const ekran = el("ucitavanje");
+  ucitajSveIzBaze().then(() => {
     if (ekran) ekran.hidden = true;
     init();
-  }).catch(function (e) {
+  }).catch((e) => {
     console.error("Ne mogu da učitam podatke sa servera:", e);
     if (ekran) {
       ekran.innerHTML =
