@@ -23,9 +23,10 @@
 
 <main>
 
-  <!-- ======================= EKRAN: KILAŽA ======================= -->
-  <!-- Ceo sadržaj (zaglavlje, grafik, statistika, stepper, obroci) renderuje
-       renderKilaza u app.js jer je interaktivan (opseg, unos, čuvanje). -->
+  <!-- ======================= EKRAN: DANAS ======================= -->
+  <!-- Kilaža (trenutna + ciljana), prsten kalorija, stepper i obroci. Ceo
+       sadržaj renderuje renderKilaza u app.js jer je interaktivan. Grafik
+       kretanja kilaže je na Istoriji. -->
   <section id="sekcija-kilaza">
     <div id="kilaza-sadrzaj"></div>
   </section>
@@ -84,6 +85,10 @@
         <button id="mesec-napred" class="tab-dugme" title="Sledeći mesec">›</button>
       </div>
     </header>
+
+    <!-- Kretanje kilaže: naslov sa prekidačem opsega, grafik i statistika.
+         Renderuje ih renderIstorijaKilazu (podaci + interakcija na opsegu). -->
+    <div id="istorija-kilaza"></div>
 
     <div class="kartice-red">
       <div class="kartica tamna">

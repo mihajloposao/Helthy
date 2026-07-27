@@ -486,6 +486,93 @@ const clampKilaza = (v) => Math.round(Math.min(300, Math.max(30, v)) * 10) / 10;
 const opsegDugme = (o) =>
   `<button data-opseg="${o}"${stanje.kilazaOpseg === o ? ' class="on"' : ""}>${o}</button>`;
 
+/* ===================== DNEVNI CILJ KALORIJA ===================== */
+
+// Podrazumevani dnevni maksimum kalorija dok korisnik ne postavi svoj.
+const KCAL_MAX_PODRAZUMEVANO = 2000;
+
+// Dnevni maksimum kalorija (čuva se uz kilažu, u ključu koji koristi samo
+// ova aplikacija).
+function kcalMax() {
+  const v = ucitajKilazu().kcalMax;
+  return typeof v === "number" && v > 0 ? v : KCAL_MAX_PODRAZUMEVANO;
+}
+
+// Menja dnevni maksimum kalorija (prompt; prazan unos vraća podrazumevani).
+function klikKcalMax() {
+  const odgovor = prompt("Dnevni maksimum kalorija (kcal):", String(kcalMax()));
+  if (odgovor === null) return;
+  const unos = odgovor.trim();
+  const k = ucitajKilazu();
+  if (unos === "") {
+    k.kcalMax = null;
+  } else {
+    const v = parseInt(unos.replace(/[^\d]/g, ""), 10);
+    if (isNaN(v) || v < 500 || v > 10000) {
+      alert("Unesi broj između 500 i 10000 kcal.");
+      return;
+    }
+    k.kcalMax = v;
+  }
+  sacuvajKilazu(k);
+  renderKilaza();
+}
+
+// Prsten kalorija: koliko je od dnevnog maksimuma pojedeno. Luk kreće od vrha,
+// tačka na kraju luka "kuca". Preko maksimuma prsten se puni do kraja i crveni.
+function kcalPrstenHtml(zbir) {
+  const max = kcalMax();
+  const uneto = zbir.kcal;
+  const ostatak = max - uneto;
+  const preko = ostatak < 0;
+  const boja = preko ? "#d9705c" : "#7fd0af";
+
+  const R = 54, OBIM = 2 * Math.PI * R;              // 339.3 — dužina punog kruga
+  const udeo = Math.max(0, Math.min(1, uneto / max));
+  const ugao = (udeo * 360 - 90) * Math.PI / 180;    // -90° = vrh kruga
+  const tx = (65 + R * Math.cos(ugao)).toFixed(1);
+  const ty = (65 + R * Math.sin(ugao)).toFixed(1);
+  const offset = (OBIM * (1 - udeo)).toFixed(1);
+
+  // Makro trake: koliko kalorija svaki makro nosi u odnosu na dnevni maksimum
+  // (protein i ugljeni hidrati 4 kcal/g, masti 9 kcal/g).
+  const makroi = [
+    ["Proteini", zbir.protein, 4],
+    ["Ugljeni h.", zbir.ugljeni, 4],
+    ["Masti", zbir.masti, 9]
+  ].map(([ime, g, kcalPoG]) =>
+    '<div class="makro-red">' +
+      `<div class="makro-vrh"><span>${ime}</span><span>${formatGrami(g)}</span></div>` +
+      `<span class="makro-traka"><span style="width:${Math.min(100, (g * kcalPoG / max) * 100).toFixed(0)}%"></span></span>` +
+    "</div>").join("");
+
+  return '<div class="kcal-kartica">' +
+    '<div class="kcal-prsten">' +
+      '<svg viewBox="0 0 130 130">' +
+        `<circle class="kcal-staza" cx="65" cy="65" r="${R}"></circle>` +
+        `<circle class="kcal-luk kcal-sjaj" cx="65" cy="65" r="${R}" stroke="${boja}" ` +
+          `stroke-dasharray="${OBIM.toFixed(1)}" stroke-dashoffset="${offset}"></circle>` +
+        `<circle class="kcal-luk" cx="65" cy="65" r="${R}" stroke="${boja}" ` +
+          `stroke-dasharray="${OBIM.toFixed(1)}" stroke-dashoffset="${offset}"></circle>` +
+        `<circle cx="${tx}" cy="${ty}" r="4.5" fill="${boja}"></circle>` +
+        `<circle class="kcal-kuca" cx="${tx}" cy="${ty}" r="4.5" stroke="${boja}"></circle>` +
+      "</svg>" +
+      '<div class="kcal-sredina">' +
+        `<b>${formatKcal(Math.abs(ostatak))}</b>` +
+        `<span>${preko ? "KCAL PREKO" : "KCAL PREOSTALO"}</span>` +
+      "</div>" +
+    "</div>" +
+    '<div class="kcal-desno">' +
+      '<div class="kcal-zaglavlje">' +
+        '<p class="kcal-cap">KALORIJE DANAS</p>' +
+        '<button class="kcal-max">max ›</button>' +
+      "</div>" +
+      `<p class="kcal-zbir">${formatKcal(uneto)} / ${formatKcal(max)} kcal</p>` +
+      makroi +
+    "</div>" +
+  "</div>";
+}
+
 // Crta SVG grafik kilaže iz vidljivih unosa: površina + linija težine,
 // tanka isprekidana linija 7-dnevnog proseka, ciljna linija i poslednja tačka.
 function buildKilazaChart(vidljivi, cilj) {
@@ -535,15 +622,33 @@ function buildKilazaChart(vidljivi, cilj) {
   return svg + "</svg>";
 }
 
-// Ceo Kilaža ekran: zaglavlje sa težinom i opsegom, cilj-traka, grafik,
-// statistika i stepper za unos današnje kilaže. Prazna i "jedan unos" stanja
-// su posebno obrađena. Pun re-render se radi samo kad se menja ono što utiče
-// na grafik/statistiku (opseg, upis kilaže, cilj, obroci) — stepper i kucanje
-// idu kroz osveziKilazaUnos.
+// Izračunava deltu kilaže u vidljivom opsegu; null ako nema bar dva unosa.
+function kilazaDelta(vidljivi, poslednja) {
+  if (vidljivi.length < 2) return null;
+  const d = poslednja - vidljivi[0].kg;
+  return { pad: d <= 0, tekst: `${d <= 0 ? "▼ " : "▲ "}${formatKg(Math.abs(d))} kg za ${vidljivi.length} dana` };
+}
+
+// Vraća {postignuto, preostalo} u odnosu na ciljnu kilažu, ili null bez cilja.
+function ciljStatus(kilaza, svi, poslednja) {
+  if (kilaza.cilj === null) return null;
+  // Bazna težina (kad je cilj postavljen) određuje smer. Za stare ciljeve
+  // bez zabeležene baze, uzmi prvi unos kao razuman početak.
+  let baza = kilaza.ciljBaza;
+  if (baza === null || baza === undefined) baza = svi.length ? svi[0].kg : poslednja;
+  const postignuto = kilaza.cilj < baza
+    ? poslednja <= kilaza.cilj + 0.0001
+    : poslednja >= kilaza.cilj - 0.0001;
+  return { postignuto: postignuto, preostalo: Math.abs(poslednja - kilaza.cilj) };
+}
+
+// Ekran "Danas": trenutna i ciljana kilaža, prsten kalorija sa makroima,
+// stepper za unos težine i obroci. Grafik kretanja je na Istoriji.
+// Pun re-render ide samo za upis kilaže, cilj, kcal maksimum i obroke —
+// stepper i kucanje idu kroz osveziKilazaUnos.
 function renderKilaza() {
   const kontejner = el("kilaza-sadrzaj");
   const kilaza = ucitajKilazu();
-  const cilj = kilaza.cilj;
   const svi = kilazaNiz();
 
   // Inicijalizuj stepper: današnji unos → poslednji → 70,0 kg.
@@ -554,72 +659,39 @@ function renderKilaza() {
   }
 
   let vidljivi = kilazaVidljivi(stanje.kilazaOpseg, svi);
-  if (vidljivi.length < 2 && svi.length >= 2) vidljivi = svi; // izbegni grafik sa jednom tačkom
+  if (vidljivi.length < 2 && svi.length >= 2) vidljivi = svi;
   const poslednja = svi.length ? svi[svi.length - 1].kg : stanje.kilazaDraft;
+  const delta = kilazaDelta(vidljivi, poslednja);
+  const cilj = ciljStatus(kilaza, svi, poslednja);
 
-  // ---- Zaglavlje: težina + delta + prekidač opsega ----
-  let html = '<header class="ekran-zaglavlje kilaza-zaglavlje"><div>' +
-    '<p class="nadnaslov">KILAŽA</p>' +
-    `<div class="kilaza-veliko"><b>${formatKg(poslednja)}</b><em>kg</em></div>`;
-  if (vidljivi.length >= 2) {
-    const delta = poslednja - vidljivi[0].kg;
-    html += `<p class="kilaza-delta ${delta <= 0 ? "dole" : "gore"}">` +
-      `${delta <= 0 ? "▼ " : "▲ "}${formatKg(Math.abs(delta))} kg za ${vidljivi.length} dana</p>`;
-  }
-  html += "</div>";
-  if (svi.length >= 2) {
-    html += `<div class="kilaza-opseg">${opsegDugme("7d")}${opsegDugme("30d")}${opsegDugme("sve")}</div>`;
-  }
-  html += "</header>";
+  // ---- Zaglavlje ----
+  let html = '<header class="ekran-zaglavlje"><div>' +
+    `<p class="nadnaslov">${imeDatuma(danasKey()).toUpperCase()}</p>` +
+    "<h1>Danas</h1>" +
+  "</div></header>";
 
-  // ---- Cilj: traka napretka ili poziv da se postavi ----
-  if (svi.length >= 1) {
-    if (cilj !== null) {
-      // Bazna težina (kad je cilj postavljen) određuje smer. Za stare ciljeve
-      // bez zabeležene baze, uzmi prvi unos kao razuman početak.
-      let baza = kilaza.ciljBaza;
-      if (baza === null || baza === undefined) baza = svi.length ? svi[0].kg : poslednja;
+  // ---- Dve kartice: trenutna težina i ciljana (tap menja cilj) ----
+  html += '<div class="danas-kartice">' +
+    '<div class="danas-kg tamna">' +
+      '<p class="danas-cap">TRENUTNA</p>' +
+      `<div class="danas-broj"><b>${formatKg(poslednja)}</b><em>kg</em></div>` +
+      (delta
+        ? `<p class="danas-delta ${delta.pad ? "dole" : "gore"}">${delta.tekst}</p>`
+        : '<p class="danas-delta">—</p>') +
+    "</div>" +
+    '<button class="danas-kg danas-cilj" title="Promeni cilj">' +
+      '<p class="danas-cap">CILJANA</p>' +
+      `<div class="danas-broj"><b>${kilaza.cilj === null ? "—" : formatKg(kilaza.cilj)}</b><em>kg</em></div>` +
+      '<p class="danas-preostalo">' +
+        (cilj === null
+          ? "postavi cilj"
+          : (cilj.postignuto ? "cilj postignut" : `još ${formatKg(cilj.preostalo)} kg`)) +
+      "</p>" +
+    "</button>" +
+  "</div>";
 
-      const smerNanize = cilj < baza; // cilj ispod baze = mršavljenje, iznad = gojenje
-      const postignuto = smerNanize ? (poslednja <= cilj + 0.0001) : (poslednja >= cilj - 0.0001);
-      const preostalo = Math.abs(poslednja - cilj);
-      const pct = cilj === baza
-        ? (postignuto ? 100 : 0)
-        : Math.max(0, Math.min(100, ((poslednja - baza) / (cilj - baza)) * 100));
-
-      html += '<button class="kilaza-cilj-red" title="Promeni cilj">' +
-        `<span class="kilaza-cilj-oznaka">CILJ ${formatKg(cilj)} kg</span>` +
-        `<span class="kilaza-cilj-traka"><span style="width:${pct.toFixed(0)}%"></span></span>` +
-        '<span class="kilaza-cilj-preostalo">' +
-          (postignuto ? "cilj postignut" : `još ${formatKg(preostalo)} kg`) +
-        "</span>" +
-      "</button>";
-    } else {
-      html += '<button class="kilaza-cilj-postavi">+ Postavi cilj kilaže</button>';
-    }
-  }
-
-  // ---- Grafik / prazna stanja ----
-  if (vidljivi.length >= 2) {
-    html += buildKilazaChart(vidljivi, cilj);
-  } else if (svi.length === 0) {
-    html += '<div class="kilaza-prazno"><strong>Još nema unosa kilaže</strong>' +
-      "<p>Unesi svoju težinu ispod da počneš da pratiš trend kroz vreme.</p></div>";
-  } else {
-    html += '<div class="kilaza-prazno"><strong>Samo jedan unos do sada</strong>' +
-      "<p>Grafik se pojavljuje kad uneseš kilažu za bar dva dana.</p></div>";
-  }
-
-  // ---- Statistika ----
-  if (svi.length >= 1) {
-    const minSvi = Math.min(...svi.map((u) => u.kg));
-    const prosek = vidljivi.reduce((a, u) => a + u.kg, 0) / vidljivi.length;
-    html += '<div class="kilaza-stat-red">' +
-      `<div class="kilaza-stat tamna"><b>${formatKg(poslednja)}<small> kg</small></b><small>trenutna</small></div>` +
-      `<div class="kilaza-stat"><b>${formatKg(prosek)}</b><small>prosek ${stanje.kilazaOpseg}</small></div>` +
-      `<div class="kilaza-stat"><b>${formatKg(minSvi)}</b><small>najniža</small></div>` +
-    "</div>";
-  }
+  // ---- Prsten kalorija + makroi ----
+  html += kcalPrstenHtml(zbirObroka(danasKey()));
 
   // ---- Stepper: unos današnje kilaže ----
   html += '<div class="kilaza-step-wrap">' +
@@ -641,12 +713,9 @@ function renderKilaza() {
   kontejner.innerHTML = html;
 
   // ---- Interakcije ----
-  // Pun re-render samo tamo gde se menja grafik/statistika: opseg i upis kilaže
-  // (cilj ide kroz klikKilazaCilj). Stepper, kucanje i skrol diraju samo unos.
-  poveziKlik(kontejner, ".kilaza-opseg button", (e) => {
-    stanje.kilazaOpseg = e.currentTarget.dataset.opseg;
-    renderKilaza();
-  });
+  // Pun re-render samo za upis kilaže, cilj i kcal maksimum.
+  // Stepper, kucanje i skrol diraju samo unos.
+  poveziKlik(kontejner, ".kcal-max", klikKcalMax);
   poveziKlik(kontejner, ".kilaza-korak", (e) => {
     promeniKilazaDraft(stanje.kilazaDraft + Number(e.currentTarget.dataset.korak) * 0.1);
   });
@@ -685,9 +754,7 @@ function renderKilaza() {
     }, { passive: false });
   }
 
-  const ciljEl = kontejner.querySelector(".kilaza-cilj-red, .kilaza-cilj-postavi");
-  if (ciljEl) ciljEl.addEventListener("click", klikKilazaCilj);
-
+  poveziKlik(kontejner, ".danas-cilj", klikKilazaCilj);
   poveziObroke(kontejner);
 }
 
@@ -725,10 +792,10 @@ function osveziKilazaUnos(azurirajPolje) {
     else dugme.removeAttribute("style");
   }
 
-  // Bez ijednog sačuvanog unosa veliki broj u zaglavlju prikazuje draft.
+  // Bez ijednog sačuvanog unosa kartica "TRENUTNA" prikazuje draft.
   if (Object.keys(kilaza.unosi).length === 0) {
-    const veliko = kontejner.querySelector(".kilaza-veliko b");
-    if (veliko) veliko.textContent = formatKg(stanje.kilazaDraft);
+    const trenutna = kontejner.querySelector(".danas-kg.tamna .danas-broj b");
+    if (trenutna) trenutna.textContent = formatKg(stanje.kilazaDraft);
   }
 }
 
@@ -883,8 +950,64 @@ function renderIstorija() {
   const napred = el("mesec-napred");
   if (napred) napred.disabled = stanje.mesecOffset >= 0;
 
+  renderIstorijaKilazu();
   renderKalendar(godina, mesec);
   renderPoslednjeDane();
+}
+
+// Kretanje kilaže na Istoriji: naslov sa prekidačem opsega, kartica sa
+// grafikom (trenutna težina + delta iznad njega) i tri statističke kartice.
+function renderIstorijaKilazu() {
+  const kontejner = el("istorija-kilaza");
+  if (!kontejner) return;
+  const kilaza = ucitajKilazu();
+  const svi = kilazaNiz();
+
+  let vidljivi = kilazaVidljivi(stanje.kilazaOpseg, svi);
+  if (vidljivi.length < 2 && svi.length >= 2) vidljivi = svi; // izbegni grafik sa jednom tačkom
+
+  let html = '<p class="naslov-sekcije naslov-opseg"><span>KRETANJE KILAŽE</span>' +
+    `<span class="kilaza-opseg">${opsegDugme("7d")}${opsegDugme("30d")}${opsegDugme("sve")}</span></p>`;
+
+  if (svi.length === 0) {
+    html += '<div class="kilaza-prazno"><strong>Još nema unosa kilaže</strong>' +
+      "<p>Unesi svoju težinu na ekranu Danas da počneš da pratiš trend.</p></div>";
+    kontejner.innerHTML = html;
+    poveziOpseg(kontejner);
+    return;
+  }
+
+  const poslednja = svi[svi.length - 1].kg;
+  const delta = kilazaDelta(vidljivi, poslednja);
+
+  html += '<div class="grafik-kartica">' +
+    '<div class="grafik-vrh">' +
+      `<span class="grafik-kg"><b>${formatKg(poslednja)}</b><em>kg danas</em></span>` +
+      (delta ? `<span class="danas-delta ${delta.pad ? "dole" : "gore"}">${delta.tekst}</span>` : "") +
+    "</div>" +
+    (vidljivi.length >= 2
+      ? buildKilazaChart(vidljivi, kilaza.cilj)
+      : '<div class="kilaza-prazno"><strong>Samo jedan unos do sada</strong>' +
+        "<p>Grafik se pojavljuje kad uneseš kilažu za bar dva dana.</p></div>") +
+  "</div>";
+
+  const prosek = vidljivi.reduce((a, u) => a + u.kg, 0) / vidljivi.length;
+  html += '<div class="kilaza-stat-red">' +
+    `<div class="kilaza-stat tamna"><b>${formatKg(poslednja)}<small> kg</small></b><small>trenutna</small></div>` +
+    `<div class="kilaza-stat"><b>${formatKg(prosek)}</b><small>prosek ${stanje.kilazaOpseg}</small></div>` +
+    `<div class="kilaza-stat"><b>${formatKg(Math.min(...svi.map((u) => u.kg)))}</b><small>najniža</small></div>` +
+  "</div>";
+
+  kontejner.innerHTML = html;
+  poveziOpseg(kontejner);
+}
+
+// Prekidač opsega grafika — precrtava samo blok kretanja kilaže.
+function poveziOpseg(kontejner) {
+  poveziKlik(kontejner, ".kilaza-opseg button", (e) => {
+    stanje.kilazaOpseg = e.currentTarget.dataset.opseg;
+    renderIstorijaKilazu();
+  });
 }
 
 // Mini kalendar meseca (Pon–Ned). Boja dana: pun = trening, polovina = samo

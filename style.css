@@ -409,42 +409,245 @@ input:focus {
   font-weight: 700;
 }
 
-/* ===================== KILAŽA ===================== */
+/* ===================== DANAS (kilaža + kalorije) ===================== */
 
-.kilaza-zaglavlje {
-  align-items: flex-start;
+/* Dve kartice u vrhu: trenutna težina i ciljana (tap menja cilj) */
+.danas-kartice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 16px;
 }
 
-/* Velika trenutna težina */
-.kilaza-veliko {
+.danas-kg {
+  background: var(--paper-svetlo);
+  border: 1px solid var(--linija);
+  border-radius: 16px;
+  padding: 14px 15px 13px;
+  text-align: left;
+  color: var(--ink);
+}
+
+.danas-kg.tamna {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper-svetlo);
+}
+
+.danas-cap {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  color: var(--ink-blago);
+  margin-bottom: 7px;
+}
+
+.danas-kg.tamna .danas-cap { color: #a8b0c6; }
+
+.danas-broj {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-top: 2px;
+  gap: 5px;
 }
 
-.kilaza-veliko b {
-  font-size: 40px;
+.danas-broj b {
+  font-size: 34px;
   font-weight: 700;
   letter-spacing: -1px;
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
-.kilaza-veliko em {
-  font-size: 16px;
-  color: var(--ink-blago);
+.danas-broj em {
+  font-size: 14px;
   font-style: normal;
+  color: var(--ink-blago);
 }
 
-.kilaza-delta {
-  font-size: 13px;
+.danas-kg.tamna .danas-broj em { color: #a8b0c6; }
+.danas-cilj .danas-broj b { color: #3d8f6f; }
+
+.danas-delta {
+  font-size: 11.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  margin-top: 4px;
+  margin-top: 8px;
+  color: #a8b0c6;
 }
 
-.kilaza-delta.dole { color: #3d8f6f; }
-.kilaza-delta.gore { color: #b25b5b; }
+/* Na tamnoj kartici trebaju svetliji tonovi da se dovoljno vide */
+.danas-delta.dole { color: #7fd0af; }
+.danas-delta.gore { color: #e79b9b; }
+
+.danas-preostalo {
+  font-size: 11.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-top: 8px;
+  color: #6b6455;
+}
+
+/* --- Prsten kalorija sa makro trakama --- */
+
+.kcal-kartica {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 12px;
+  padding: 16px;
+  background: var(--ink);
+  border-radius: 18px;
+  color: var(--paper-svetlo);
+}
+
+.kcal-prsten {
+  position: relative;
+  width: 122px;
+  flex-shrink: 0;
+}
+
+.kcal-prsten svg {
+  width: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.kcal-staza {
+  fill: none;
+  stroke: #ffffff1f;
+  stroke-width: 14;
+}
+
+/* Luk kreće od vrha kruga (rotate -90) */
+.kcal-luk {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 65px 65px;
+}
+
+.kcal-kuca {
+  fill: none;
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Meki oreol iza luka — deblji i zamućen */
+.kcal-sjaj {
+  stroke-width: 17;
+  filter: blur(5px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .kcal-sjaj { animation: dahni 2.6s ease-in-out infinite; }
+  .kcal-kuca { animation: kucaj 2.6s ease-in-out infinite; }
+}
+
+@keyframes dahni {
+  0%, 100% { opacity: 0.16; }
+  50%      { opacity: 0.5; }
+}
+
+@keyframes kucaj {
+  0%   { transform: scale(1);   opacity: 0.9; }
+  75%  { transform: scale(2.7); opacity: 0; }
+  100% { transform: scale(2.7); opacity: 0; }
+}
+
+.kcal-sredina {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.kcal-sredina b {
+  font-size: 29px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.kcal-sredina span {
+  margin-top: 4px;
+  font-size: 8.5px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  color: #a8b0c6;
+  white-space: nowrap;
+}
+
+.kcal-desno {
+  flex: 1;
+  min-width: 0;
+}
+
+.kcal-zaglavlje {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.kcal-cap {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.6px;
+  color: #a8b0c6;
+}
+
+.kcal-max {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a8b0c6;
+}
+
+.kcal-zbir {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 6px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.makro-red {
+  margin-bottom: 9px;
+}
+
+.makro-vrh {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: #c9cede;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.makro-traka {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: #ffffff1f;
+  overflow: hidden;
+}
+
+.makro-traka span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--paper-svetlo);
+}
+
+/* ===================== KILAŽA: GRAFIK (Istorija) ===================== */
+
+/* Naslov sekcije koji desno nosi prekidač opsega */
+.naslov-opseg {
+  align-items: center;
+  margin-top: 22px;
+}
 
 /* Prekidač opsega grafika (7d / 30d / sve) */
 .kilaza-opseg {
@@ -460,6 +663,7 @@ input:focus {
   background: var(--paper-svetlo);
   font-size: 12px;
   font-weight: 600;
+  letter-spacing: 0;
   color: var(--ink-blago);
 }
 
@@ -469,61 +673,43 @@ input:focus {
   border-color: var(--ink);
 }
 
-/* Traka napretka ka cilju */
-.kilaza-cilj-red {
+.grafik-kartica {
+  background: var(--paper-svetlo);
+  border: 1px solid var(--linija);
+  border-radius: 16px;
+  padding: 12px 10px 6px;
+}
+
+.grafik-vrh {
   display: flex;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  margin-top: 13px;
-  padding: 10px 13px;
-  background: #3d8f6f12;
-  border: 1px solid #3d8f6f33;
-  border-radius: 12px;
-  font-size: 12.5px;
-  color: var(--ink);
-  text-align: left;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 6px 2px;
 }
 
-.kilaza-cilj-oznaka {
+.grafik-kg {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.grafik-kg b {
+  font-size: 26px;
   font-weight: 700;
-  color: #3d8f6f;
-  letter-spacing: 0.3px;
-  flex-shrink: 0;
-}
-
-.kilaza-cilj-traka {
-  flex: 1;
-  height: 6px;
-  background: #dfe9e2;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.kilaza-cilj-traka span {
-  display: block;
-  height: 100%;
-  background: #3d8f6f;
-  border-radius: 3px;
-}
-
-.kilaza-cilj-preostalo {
-  color: #6b6455;
+  letter-spacing: -0.8px;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  flex-shrink: 0;
 }
 
-.kilaza-cilj-postavi {
-  width: 100%;
-  margin-top: 13px;
-  padding: 11px;
-  border: 1.5px dashed var(--ink-blago);
-  border-radius: 12px;
+.grafik-kg em {
+  font-size: 12px;
+  font-style: normal;
   color: var(--ink-blago);
-  font-size: 13px;
-  font-weight: 600;
 }
+
+/* Delta uz grafik stoji na svetloj podlozi, pa treba tamniji ton */
+.grafik-vrh .danas-delta { margin-top: 0; font-size: 12px; }
+.grafik-vrh .danas-delta.dole { color: #3d8f6f; }
+.grafik-vrh .danas-delta.gore { color: #b25b5b; }
 
 /* Grafik */
 .kilaza-grafik {
